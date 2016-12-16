@@ -3,6 +3,7 @@ import gettext
 from . import correct_jitter
 import copy
 import threading
+import logging
 
 _ = gettext.gettext
 
@@ -120,13 +121,16 @@ class JitterPanelDelegate(object):
             maxima = self.Jitter.local_maxima[1]
             print('Done')
             shape = self.source_data_item.xdata.data_shape
-            print(len(maxima))
+            number_maxima = len(maxima)
+            print(number_maxima)
             with self.document_controller.library.data_ref_for_data_item(self.processed_data_item):
                 for region in self.processed_data_item.regions:
                     if region.type == 'point-region':
                         self.processed_data_item.remove_region(region)
-                for maximum in maxima:
-                    self.processed_data_item.add_point_region(maximum[0]/shape[0], maximum[1]/shape[1])
+                for i in range(number_maxima):
+                    maximum = maxima[i]
+                    if number_maxima < 3000 or i%(number_maxima//3000) == 0:
+                        self.processed_data_item.add_point_region(maximum[0]/shape[0], maximum[1]/shape[1])
         self.t = threading.Thread(target=do_processing)
         self.t.start()
         #do_processing()
