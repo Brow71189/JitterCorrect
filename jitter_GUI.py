@@ -122,14 +122,21 @@ class JitterPanelDelegate(object):
             print('Done')
             shape = self.source_data_item.xdata.data_shape
             number_maxima = len(maxima)
-            print(number_maxima)
+            if number_maxima < 3000:
+                logging.info('Found {:.0f} maxima'.format(number_maxima))
+            else:
+                logging.info('Found {:.0f} maxima (only showing {:.0f} for performance reasons)'.format(number_maxima,
+                                                                             number_maxima//((number_maxima//3000)+1)))
             with self.document_controller.library.data_ref_for_data_item(self.processed_data_item):
                 for region in self.processed_data_item.regions:
                     if region.type == 'point-region':
-                        self.processed_data_item.remove_region(region)
+                        try:
+                            self.processed_data_item.remove_region(region)
+                        except:
+                            pass
                 for i in range(number_maxima):
-                    maximum = maxima[i]
-                    if number_maxima < 3000 or i%(number_maxima//3000) == 0:
+                    if number_maxima < 3000 or i%((number_maxima//3000)+1) == 0:
+                        maximum = maxima[i]
                         self.processed_data_item.add_point_region(maximum[0]/shape[0], maximum[1]/shape[1])
         self.t = threading.Thread(target=do_processing)
         self.t.start()
@@ -155,12 +162,15 @@ class JitterPanelDelegate(object):
         self.t.start()
     
     def get_source_data_item(self):
-        if (self.source_data_item is None or
-            (self.document_controller.target_data_item.specifier.object_uuid != self.source_data_item.specifier.object_uuid and
-             (self.dejittered_data_item is None or self.dejittered_data_item.specifier.object_uuid != self.document_controller.target_data_item.specifier.object_uuid) and
-             (self.processed_data_item is None or self.processed_data_item.specifier.object_uuid != self.document_controller.target_data_item.specifier.object_uuid))):
-                self.source_data_item = self.document_controller.target_data_item
-                self.Jitter.image = self.source_data_item.data
+        try:
+            if (self.source_data_item is None or
+                (self.document_controller.target_data_item.specifier.object_uuid != self.source_data_item.specifier.object_uuid and
+                 (self.dejittered_data_item is None or self.dejittered_data_item.specifier.object_uuid != self.document_controller.target_data_item.specifier.object_uuid) and
+                 (self.processed_data_item is None or self.processed_data_item.specifier.object_uuid != self.document_controller.target_data_item.specifier.object_uuid))):
+                    self.source_data_item = self.document_controller.target_data_item
+                    self.Jitter.image = self.source_data_item.data
+        except AttributeError:
+            self.source_data_item = None
         
         
 class JitterExtension(object):

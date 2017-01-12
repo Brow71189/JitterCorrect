@@ -149,7 +149,7 @@ class Jitter(object):
         print('correcting y-jitter')
         for maximum in local_maxima:
             max_array = np.array(maximum)
-            if (max_array < half_box_size).any() or (max_array > np.array(shape) - half_box_size -1).any():
+            if (max_array < half_box_size).any() or (max_array >= np.array(shape) - half_box_size - 1).any():
                 continue
             chunk = (maximum[0]-half_box_size, maximum[0]+half_box_size, maximum[1]-half_box_size, maximum[1]+half_box_size)
             new_y_coords = self.remove_y_jitter(self.image[chunk[0]:chunk[1], chunk[2]:chunk[3]], return_coordinates=True)
@@ -162,7 +162,7 @@ class Jitter(object):
         print('correcting x-jitter')
         for maximum in local_maxima:
             max_array = np.array(maximum)
-            if (max_array < half_box_size).any() or (max_array > np.array(shape) - half_box_size -1).any():
+            if (max_array < half_box_size).any() or (max_array >= np.array(shape) - half_box_size - 1).any():
                 continue
             chunk = (maximum[0]-half_box_size, maximum[0]+half_box_size, maximum[1]-half_box_size, maximum[1]+half_box_size)
             new_x_coords = self.remove_x_jitter_com(y_corrected[chunk[0]:chunk[1], chunk[2]:chunk[3]], return_coordinates=True)
