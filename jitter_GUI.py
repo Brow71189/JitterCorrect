@@ -4,6 +4,7 @@ from . import correct_jitter
 import copy
 import threading
 import logging
+import numpy as np
 
 _ = gettext.gettext
 
@@ -116,28 +117,34 @@ class JitterPanelDelegate(object):
                                                                 title='Local Maxima of ' + self.source_data_item.title)
             print('blurring image')    
             self.processed_data_item.title = 'Local Maxima of ' + self.source_data_item.title
-            self.processed_data_item.set_data(self.Jitter.gaussian_blur(sigma=self.sigma))
+            blurred_data = self.Jitter.gaussian_blur(sigma=self.sigma)
             print('finding maxima')
             maxima = self.Jitter.local_maxima[1]
             print('Done')
             shape = self.source_data_item.xdata.data_shape
             number_maxima = len(maxima)
-            if number_maxima < 3000:
-                logging.info('Found {:.0f} maxima'.format(number_maxima))
-            else:
-                logging.info('Found {:.0f} maxima (only showing {:.0f} for performance reasons)'.format(number_maxima,
-                                                                             number_maxima//((number_maxima//3000)+1)))
-            with self.document_controller.library.data_ref_for_data_item(self.processed_data_item):
-                for region in self.processed_data_item.regions:
-                    if region.type == 'point-region':
-                        try:
-                            self.processed_data_item.remove_region(region)
-                        except:
-                            pass
-                for i in range(number_maxima):
-                    if number_maxima < 3000 or i%((number_maxima//3000)+1) == 0:
-                        maximum = maxima[i]
-                        self.processed_data_item.add_point_region(maximum[0]/shape[0], maximum[1]/shape[1])
+            logging.info('Found {:.0f} maxima'.format(number_maxima))
+            crosssize = max(min(np.amin(shape)/np.sqrt(number_maxima)/2, np.amin(shape)/20), 3)
+            crosscolor = np.mean(blurred_data)
+            for maximum in maxima:
+                self.draw_cross(blurred_data, maximum, crosssize, color=crosscolor)
+            self.processed_data_item.set_data(blurred_data)
+#            if number_maxima < 3000:
+#                logging.info('Found {:.0f} maxima'.format(number_maxima))
+#            else:
+#                logging.info('Found {:.0f} maxima (only showing {:.0f} for performance reasons)'.format(number_maxima,
+#                                                                             number_maxima//((number_maxima//3000)+1)))
+#            with self.document_controller.library.data_ref_for_data_item(self.processed_data_item):
+#                for region in self.processed_data_item.regions:
+#                    if region.type == 'point-region':
+#                        try:
+#                            self.processed_data_item.remove_region(region)
+#                        except:
+#                            pass
+#                for i in range(number_maxima):
+#                    if number_maxima < 3000 or i%((number_maxima//3000)+1) == 0:s
+#                        maximum = maxima[i]
+#                        self.processed_data_item.add_point_region(maximum[0]/shape[0], maximum[1]/shape[1])
         self.t = threading.Thread(target=do_processing)
         self.t.start()
         #do_processing()
@@ -171,7 +178,14 @@ class JitterPanelDelegate(object):
                     self.Jitter.image = self.source_data_item.data
         except AttributeError:
             self.source_data_item = None
-        
+
+    def draw_cross(self, data, coords, size, color=1):
+        coords = np.array(coords)
+        shape = np.array(data.shape)
+        halfsize = int(np.rint(size/2))
+        if (coords - halfsize > 0).all() and (coords + halfsize < shape - 1).all():
+            data[coords[0]-halfsize:coords[0]+halfsize+1, coords[1]] += color
+            data[coords[0], coords[1]-halfsize:coords[1]+halfsize+1] += color
         
 class JitterExtension(object):
     extension_id = 'univie.jittercorrector'
