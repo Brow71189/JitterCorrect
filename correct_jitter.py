@@ -15,6 +15,8 @@ class Jitter(object):
         self._blur_radius = None
         self._blurred_image = None
         self._local_maxima = None
+        self._raw_local_maxima = None
+        self._noise_tolerance = None
     
     @property
     def image(self):
@@ -25,6 +27,7 @@ class Jitter(object):
         self._image = image
         self._blurred_image = None
         self._local_maxima = None
+        self._raw_local_maxima = None
         
     @property
     def blurred_image(self):
@@ -41,13 +44,30 @@ class Jitter(object):
     def blur_radius(self, blur_radius):
         if blur_radius != self._blur_radius:
             self._blurred_image = None
-            self._local_maxima = None
+            self._raw_local_maxima = None
         self._blur_radius = blur_radius
     
     @property
+    def noise_tolerance(self):
+        return self._noise_tolerance
+        
+    @noise_tolerance.setter
+    def noise_tolerance(self, noise_tolerance):
+        if noise_tolerance != self._noise_tolerance:
+            self._local_maxima = None
+        self._noise_tolerance = noise_tolerance
+    
+    @property
+    def raw_local_maxima(self):
+        if self._raw_local_maxima is None:
+            self._raw_local_maxima = self.find_local_maxima()
+        return self._raw_local_maxima
+        
+    @property
     def local_maxima(self):
         if self._local_maxima is None:
-            self._local_maxima = self.find_local_maxima()
+            self._local_maxima = [self.raw_local_maxima[0],
+                                  self.analyze_and_mark_maxima(self.raw_local_maxima[1], self.noise_tolerance)]
         return self._local_maxima
 
     def gaussian_blur(self, image=None, sigma=None):
@@ -102,6 +122,68 @@ class Jitter(object):
 #                if is_max:
 #                    local_maxima[y,x] = blurred_image[y,x]
         return local_maxima, list(zip(*np.where(local_maxima)))
+        
+    def analyze_and_mark_maxima(self, maxima, noise_tolerance=0):
+        import time
+        starttime = time.time()
+        blurred_image = self.blurred_image
+        sorted_maxima = maxima.copy()
+        sorted_maxima.sort(key=lambda entry: blurred_image[entry] ,reverse=True)
+        for maximum in sorted_maxima:
+            print(str(maximum) + ' ' + str(blurred_image[maximum]))
+        resulting_maxima = []
+        y_positions = [1, -1, 0, 1, -1,  0,  1, -1]
+        x_positions = [0,  0, 1, 1,  1, -1, -1, -1]
+        point_attributes = np.empty(blurred_image.shape, dtype=object)
+        for maximum in sorted_maxima:
+            nlist = [maximum]
+            if point_attributes[maximum] is None:
+                point_attributes[maximum] = []
+            point_attributes[maximum].append('listed')
+            listi = 0
+            maximum_possible = True
+            maximum_value = blurred_image[maximum]
+            while listi < len(nlist):
+#            for i in range(np.size(blurred_image)):
+#                if listi >= len(nlist):
+#                    break
+                for k in range(8):
+                    current_point = (nlist[listi][0] + y_positions[k], nlist[listi][1] + x_positions[k])
+                    if (np.array(current_point) < 0).any() or (np.array(current_point) >= np.array(blurred_image.shape)).any():
+                        continue
+                    if point_attributes[current_point] is None:
+                        point_attributes[current_point] = []
+                    elif 'listed' in point_attributes[current_point]:
+                        continue
+                    elif 'visited' in point_attributes[current_point]:
+                        continue
+                    elif 'processed' in point_attributes[current_point]:
+                        maximum_possible = False
+                        break
+                    current_value = blurred_image[current_point]
+                    if current_value > maximum_value:
+                        maximum_possible = False
+                        print('Found higher value ' + str(current_point) + ' ' + str(current_value) +' ' + str(maximum_value))
+                        point_attributes[current_point].append('visited')
+                        break
+                    if current_value >= maximum_value - noise_tolerance:
+                        nlist.append(current_point)
+                        point_attributes[current_point].append('listed')
+                listi += 1
+            
+            print(len(nlist))
+            for point in nlist:
+                point_attributes[point].append('processed')
+                try:
+                    point_attributes[point].remove('listed')
+                except ValueError:
+                    pass
+            if maximum_possible:
+                resulting_maxima.append(maximum)
+        print(resulting_maxima)
+        print(time.time() - starttime)
+        return resulting_maxima
+        
         
     def remove_y_jitter(self, crop_im, return_coordinates=False):
         shape = crop_im.shape

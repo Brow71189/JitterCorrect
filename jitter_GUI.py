@@ -22,6 +22,7 @@ class JitterPanelDelegate(object):
         self.find_maxima_button = None
         self.correct_jitter_button = None
         self.sigma = 5
+        self.noise_tolerance = 1
         self.box_size = 60
         self.source_data_item = None
         self.processed_data_item = None
@@ -41,6 +42,15 @@ class JitterPanelDelegate(object):
                 finally:
                     self.sigma_field.text = str(self.sigma)
         
+        def noise_tolerance_finished(text):
+            if len(text) > 0:
+                try:
+                    self.noise_tolerance = float(text)
+                except ValueError:
+                    pass
+                finally:
+                    self.noise_tolerance_field.text = str(self.noise_tolerance)
+        
         def box_size_finished(text):
             if len(text) > 0:
                 try:
@@ -53,11 +63,13 @@ class JitterPanelDelegate(object):
         def find_maxima_clicked():
             self.get_source_data_item()
             self.Jitter.blur_radius = self.sigma
+            self.Jitter.noise_tolerance = self.noise_tolerance
             self.process_and_show_data()
         
         def correct_jitter_clicked():
             self.get_source_data_item()            
             self.Jitter.blur_radius = self.sigma
+            self.Jitter.noise_tolerance = self.noise_tolerance
             self.correct_jitter()
         
         
@@ -65,6 +77,9 @@ class JitterPanelDelegate(object):
         self.sigma_field = ui.create_line_edit_widget()
         self.sigma_field.text = str(self.sigma)
         self.sigma_field.on_editing_finished = sigma_finished
+        self.noise_tolerance_field = ui.create_line_edit_widget()
+        self.noise_tolerance_field.text = str(self.noise_tolerance)
+        self.noise_tolerance_field.on_editing_finished = noise_tolerance_finished
         self.box_size_field = ui.create_line_edit_widget()
         self.box_size_field.text = str(self.box_size)
         self.box_size_field.on_editing_finished = box_size_finished
@@ -85,6 +100,13 @@ class JitterPanelDelegate(object):
         fields_row.add_spacing(5)
         fields_row.add_stretch()
         
+        fields_row2 = ui.create_row_widget()
+        fields_row2.add_spacing(5)
+        fields_row2.add(ui.create_label_widget('Noise tolerance: '))
+        fields_row2.add(self.noise_tolerance_field)
+        fields_row2.add_spacing(5)
+        fields_row2.add_stretch()
+        
         button_row = ui.create_row_widget()
         button_row.add_spacing(5)
         button_row.add(self.find_maxima_button)
@@ -95,6 +117,8 @@ class JitterPanelDelegate(object):
         
         column.add_spacing(5)
         column.add(fields_row)
+        column.add_spacing(10)
+        column.add(fields_row2)
         column.add_spacing(10)
         column.add(button_row)
         column.add_spacing(5)
@@ -124,27 +148,27 @@ class JitterPanelDelegate(object):
             shape = self.source_data_item.xdata.data_shape
             number_maxima = len(maxima)
             logging.info('Found {:.0f} maxima'.format(number_maxima))
-            crosssize = max(min(np.amin(shape)/np.sqrt(number_maxima)/2, np.amin(shape)/20), 3)
-            crosscolor = np.mean(blurred_data)
-            for maximum in maxima:
-                self.draw_cross(blurred_data, maximum, crosssize, color=crosscolor)
+#            crosssize = max(min(np.amin(shape)/np.sqrt(number_maxima)/2, np.amin(shape)/20), 3)
+#            crosscolor = np.mean(blurred_data)
+#            for maximum in maxima:
+#                self.draw_cross(blurred_data, maximum, crosssize, color=crosscolor)
             self.processed_data_item.set_data(blurred_data)
-#            if number_maxima < 3000:
-#                logging.info('Found {:.0f} maxima'.format(number_maxima))
-#            else:
-#                logging.info('Found {:.0f} maxima (only showing {:.0f} for performance reasons)'.format(number_maxima,
-#                                                                             number_maxima//((number_maxima//3000)+1)))
-#            with self.document_controller.library.data_ref_for_data_item(self.processed_data_item):
-#                for region in self.processed_data_item.regions:
-#                    if region.type == 'point-region':
-#                        try:
-#                            self.processed_data_item.remove_region(region)
-#                        except:
-#                            pass
-#                for i in range(number_maxima):
-#                    if number_maxima < 3000 or i%((number_maxima//3000)+1) == 0:s
-#                        maximum = maxima[i]
-#                        self.processed_data_item.add_point_region(maximum[0]/shape[0], maximum[1]/shape[1])
+            if number_maxima < 3000:
+                logging.info('Found {:.0f} maxima'.format(number_maxima))
+            else:
+                logging.info('Found {:.0f} maxima (only showing {:.0f} for performance reasons)'.format(number_maxima,
+                                                                             number_maxima//((number_maxima//3000)+1)))
+            with self.document_controller.library.data_ref_for_data_item(self.processed_data_item):
+                for region in self.processed_data_item.regions:
+                    if region.type == 'point-region':
+                        try:
+                            self.processed_data_item.remove_region(region)
+                        except:
+                            pass
+                for i in range(number_maxima):
+                    if number_maxima < 3000 or i%((number_maxima//3000)+1) == 0:
+                        maximum = maxima[i]
+                        self.processed_data_item.add_point_region(maximum[0]/shape[0], maximum[1]/shape[1])
         self.t = threading.Thread(target=do_processing)
         self.t.start()
         #do_processing()
