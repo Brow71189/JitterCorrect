@@ -124,8 +124,6 @@ class Jitter(object):
         return local_maxima, list(zip(*np.where(local_maxima)))
         
     def analyze_and_mark_maxima(self, maxima, noise_tolerance=0):
-        import time
-        starttime = time.time()
         blurred_image = self.blurred_image
         shape = blurred_image.shape
         sorted_maxima = maxima.copy()
@@ -163,16 +161,12 @@ class Jitter(object):
 #                        point_attributes[current_point] = []
                     elif 'listed' in point_attributes[current_point_flat]:
                         continue
-#                    elif 'visited' in point_attributes[current_point_flat]:
-#                        continue
                     elif 'processed' in point_attributes[current_point_flat]:
                         maximum_possible = False
                         break
                     current_value = blurred_image[current_point]
                     if current_value > maximum_value:
                         maximum_possible = False
-                        #print('Found higher value ' + str(current_point) + ' ' + str(current_value) +' ' + str(maximum_value))
-                        #point_attributes[current_point_flat].append('visited')
                         break
                     if current_value >= maximum_value - noise_tolerance:
                         nlist[listlen] = current_point
@@ -184,13 +178,10 @@ class Jitter(object):
                 point = nlist[j]
                 point_flat = point[0] * shape[0] + point[1]
                 point_attributes[point_flat].append('processed')
-                try:
+                if 'listed' in point_attributes[point_flat]:
                     point_attributes[point_flat].remove('listed')
-                except ValueError:
-                    pass
             if maximum_possible:
                 resulting_maxima.append(maximum)
-        print(time.time() - starttime)
         return resulting_maxima
         
         
