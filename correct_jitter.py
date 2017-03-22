@@ -127,17 +127,15 @@ class Jitter(object):
         blurred_image = self.blurred_image
         shape = blurred_image.shape
         sorted_maxima = maxima.copy()
-        sorted_maxima.sort(key=lambda entry: blurred_image[entry] ,reverse=True)
-        for maximum in sorted_maxima:
-            print(str(maximum) + ' ' + str(blurred_image[maximum]))
+        sorted_maxima.sort(key=lambda entry: blurred_image[entry], reverse=True)
         resulting_maxima = []
         y_positions = [1, -1, 0, 1, -1,  0,  1, -1]
         x_positions = [0,  0, 1, 1,  1, -1, -1, -1]
-        point_attributes = [[]]*np.product(shape)
-        nlist = [[]]*np.product(shape)
+        point_attributes = [list() for i in range(blurred_image.size)]
+        nlist = [list() for i in range(blurred_image.size)]
         for maximum in sorted_maxima:
             nlist[0] = maximum
-            maximum_flat = maximum[0]*shape[0] + maximum[1]
+            maximum_flat = maximum[0]*shape[1] + maximum[1]
 #            if point_attributes[maximum2] is None:
 #                point_attributes[maximum2] = []
             point_attributes[maximum_flat].append('listed')
@@ -151,7 +149,7 @@ class Jitter(object):
 #                    break
                 for k in range(8):
                     current_point = (nlist[listi][0] + y_positions[k], nlist[listi][1] + x_positions[k])
-                    current_point_flat = current_point[0]*shape[0] + current_point[1]
+                    current_point_flat = current_point[0]*shape[1] + current_point[1]
 #                    if (np.array(current_point) < 0).any() or (np.array(current_point) >= np.array(blurred_image.shape)).any():
 #                        continue
                     if (current_point[0] < 0 or current_point[1] < 0 or
@@ -174,9 +172,10 @@ class Jitter(object):
                         point_attributes[current_point_flat].append('listed')
                 listi += 1
             
+            
             for j in range(listlen):
                 point = nlist[j]
-                point_flat = point[0] * shape[0] + point[1]
+                point_flat = point[0] * shape[1] + point[1]
                 point_attributes[point_flat].append('processed')
                 if 'listed' in point_attributes[point_flat]:
                     point_attributes[point_flat].remove('listed')
