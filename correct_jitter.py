@@ -132,7 +132,7 @@ class Jitter(object):
         sorted_maxima = maxima.copy()
         sorted_maxima.sort(key=lambda entry: self.blurred_image[entry], reverse=True)
         resulting_maxima = []
-        array_sorted_maxima = np.array(sorted_maxima, dtype=np.ulonglong)
+        array_sorted_maxima = np.array(sorted_maxima, dtype=np.uintc)
         flattened_array_sorted_maxima = array_sorted_maxima[:, 0] * shape[1] + array_sorted_maxima[:, 1]
         analyze_maxima.analyze_maxima(blurred_image, shape, flattened_array_sorted_maxima, resulting_maxima, noise_tolerance)
         #y_positions = [1, -1, 0, 1, -1,  0,  1, -1]
