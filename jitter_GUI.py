@@ -147,7 +147,7 @@ class JitterPanelDelegate(object):
             print('Done')
             shape = self.source_data_item.xdata.data_shape
             number_maxima = len(maxima)
-            logging.info('Found {:.0f} maxima'.format(number_maxima))
+            #logging.info('Found {:.0f} maxima'.format(number_maxima))
 #            crosssize = max(min(np.amin(shape)/np.sqrt(number_maxima)/2, np.amin(shape)/20), 3)
 #            crosscolor = np.mean(blurred_data)
 #            for maximum in maxima:

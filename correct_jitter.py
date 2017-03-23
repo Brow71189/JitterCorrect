@@ -7,6 +7,8 @@ Created on Wed Dec 14 14:19:31 2016
 
 import numpy as np
 from scipy import ndimage
+import pyximport; pyximport.install()
+from . import analyze_maxima
 
 class Jitter(object):
     
@@ -45,6 +47,7 @@ class Jitter(object):
         if blur_radius != self._blur_radius:
             self._blurred_image = None
             self._raw_local_maxima = None
+            self._local_maxima = None
         self._blur_radius = blur_radius
     
     @property
@@ -124,64 +127,83 @@ class Jitter(object):
         return local_maxima, list(zip(*np.where(local_maxima)))
         
     def analyze_and_mark_maxima(self, maxima, noise_tolerance=0):
-        blurred_image = self.blurred_image
-        shape = blurred_image.shape
+        blurred_image = self.blurred_image.ravel().astype(np.float32)
+        shape = self.blurred_image.shape
         sorted_maxima = maxima.copy()
-        sorted_maxima.sort(key=lambda entry: blurred_image[entry], reverse=True)
+        sorted_maxima.sort(key=lambda entry: self.blurred_image[entry], reverse=True)
         resulting_maxima = []
-        y_positions = [1, -1, 0, 1, -1,  0,  1, -1]
-        x_positions = [0,  0, 1, 1,  1, -1, -1, -1]
-        point_attributes = [list() for i in range(blurred_image.size)]
-        nlist = [list() for i in range(blurred_image.size)]
-        for maximum in sorted_maxima:
-            nlist[0] = maximum
-            maximum_flat = maximum[0]*shape[1] + maximum[1]
-#            if point_attributes[maximum2] is None:
-#                point_attributes[maximum2] = []
-            point_attributes[maximum_flat].append('listed')
-            listi = 0
-            listlen = 1
-            maximum_possible = True
-            maximum_value = blurred_image[maximum]
-            while listi < listlen:
-#            for i in range(np.size(blurred_image)):
-#                if listi >= len(nlist):
-#                    break
-                for k in range(8):
-                    current_point = (nlist[listi][0] + y_positions[k], nlist[listi][1] + x_positions[k])
-                    current_point_flat = current_point[0]*shape[1] + current_point[1]
-#                    if (np.array(current_point) < 0).any() or (np.array(current_point) >= np.array(blurred_image.shape)).any():
+        array_sorted_maxima = np.array(sorted_maxima, dtype=np.ulonglong)
+        flattened_array_sorted_maxima = array_sorted_maxima[:, 0] * shape[1] + array_sorted_maxima[:, 1]
+        analyze_maxima.analyze_maxima(blurred_image, shape, flattened_array_sorted_maxima, resulting_maxima, noise_tolerance)
+        #y_positions = [1, -1, 0, 1, -1,  0,  1, -1]
+        #x_positions = [0,  0, 1, 1,  1, -1, -1, -1]
+        #point_attributes = [list() for i in range(self.blurred_image.size)]
+        #nlist = [list() for i in range(self.blurred_image.size)]
+        #import time
+        #runtime = 0
+        #numberlooprounds = 0
+        #print('Number maxima: ' + str(len(maxima)))
+        #for maximum in sorted_maxima:
+            #flood_fill.flood_filling(blurred_image, shape, point_attributes, maximum, resulting_maxima, noise_tolerance)
+#            nlist[0] = maximum
+#            maximum_flat = maximum[0]*shape[1] + maximum[1]
+##            if point_attributes[maximum2] is None:
+##                point_attributes[maximum2] = []
+#            point_attributes[maximum_flat].append('listed')
+#            listi = 0
+#            listlen = 1
+#            maximum_possible = True
+#            maximum_value = blurred_image[maximum[0]][maximum[1]]
+#            
+#            while listi < listlen:
+##            for i in range(np.size(blurred_image)):
+##                if listi >= len(nlist):
+##                    break
+#                for k in range(8):
+#                    numberlooprounds += 1
+#                    starttime = time.time()
+#                    current_point = (nlist[listi][0] + y_positions[k], nlist[listi][1] + x_positions[k])
+#                    current_point_flat = current_point[0]*shape[1] + current_point[1]
+##                    if (np.array(current_point) < 0).any() or (np.array(current_point) >= np.array(blurred_image.shape)).any():
+##                        continue
+#                    if (current_point[0] < 0 or current_point[1] < 0 or
+#                        current_point[0] >= shape[0] or current_point[1] >= shape[1]):
 #                        continue
-                    if (current_point[0] < 0 or current_point[1] < 0 or
-                        current_point[0] >= shape[0] or current_point[1] >= shape[1]):
-                        continue
-#                    if point_attributes[current_point] is None:
-#                        point_attributes[current_point] = []
-                    elif 'listed' in point_attributes[current_point_flat]:
-                        continue
-                    elif 'processed' in point_attributes[current_point_flat]:
-                        maximum_possible = False
-                        break
-                    current_value = blurred_image[current_point]
-                    if current_value > maximum_value:
-                        maximum_possible = False
-                        break
-                    if current_value >= maximum_value - noise_tolerance:
-                        nlist[listlen] = current_point
-                        listlen += 1
-                        point_attributes[current_point_flat].append('listed')
-                listi += 1
-            
-            
-            for j in range(listlen):
-                point = nlist[j]
-                point_flat = point[0] * shape[1] + point[1]
-                point_attributes[point_flat].append('processed')
-                if 'listed' in point_attributes[point_flat]:
-                    point_attributes[point_flat].remove('listed')
-            if maximum_possible:
-                resulting_maxima.append(maximum)
-        return resulting_maxima
+##                    if point_attributes[current_point] is None:
+##                        point_attributes[current_point] = []
+#                    elif 'listed' in point_attributes[current_point_flat]:
+#                        continue
+#                    elif 'processed' in point_attributes[current_point_flat]:
+#                        maximum_possible = False
+#                        break
+#                    
+#                    current_value = blurred_image[current_point[0]][current_point[1]]
+#                    if current_value > maximum_value:
+#                        maximum_possible = False
+#                        break
+#                    if current_value >= maximum_value - noise_tolerance:
+#                        nlist[listlen] = current_point
+#                        listlen += 1
+#                        point_attributes[current_point_flat].append('listed')
+#                    runtime += time.time() - starttime
+#                listi += 1
+#            print(listlen)
+#            
+#            
+#            for j in range(listlen):
+#                point = nlist[j]
+#                point_flat = point[0] * shape[1] + point[1]
+#                point_attributes[point_flat].append('processed')
+#                if 'listed' in point_attributes[point_flat]:
+#                    point_attributes[point_flat].remove('listed')
+#            if maximum_possible:
+#                resulting_maxima.append(maximum)
+#        print(runtime)
+#        print('Number loop rounds: ' + str(numberlooprounds))
+        converted_resulting_maxima = []
+        for maximum in resulting_maxima:
+            converted_resulting_maxima.append((maximum//shape[1], maximum%shape[1]))
+        return converted_resulting_maxima
         
         
     def remove_y_jitter(self, crop_im, return_coordinates=False):
