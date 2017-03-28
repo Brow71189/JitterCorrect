@@ -34,7 +34,7 @@ class Jitter(object):
     @property
     def blurred_image(self):
         if self._blurred_image is None:
-            print('Calculating new blurred image')
+            #print('Calculating new blurred image')
             self._blurred_image = ndimage.gaussian_filter(self.image.astype(np.float64), self._blur_radius)
         return self._blurred_image
     
