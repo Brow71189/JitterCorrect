@@ -24,20 +24,38 @@ class NanoDiffPanelDelegate(object):
         self.panel_name = 'NanoDiff Analysis'
         self.panel_positions = ['left', 'right']
         self.panel_position = 'right'
-        self.current_slice = None
+        self._current_slice = None
         self.filepath = None
         self.slice_image = None
         self._vdf_image = None
         self._vdf_pick_region = None
         self._results_image = None
         self._results_pick_region = None
+        self._single_image_peaks = None
         self.h5file = None
         self._last_opened_folder = ''
         self._nanodiff_analyzer = nanodiff_analyis.NanoDiffAnalyzer()
         
     @property
+    def current_slice(self):
+        return self._current_slice
+    
+    @current_slice.setter
+    def current_slice(self, current_slice):
+        if current_slice != self._current_slice:
+            self._current_slice = current_slice
+            if self.vdf_pick_region is not None:
+                shape = self.vdf_image.data.shape
+                position = (current_slice//shape[1]/shape[0], current_slice%shape[1]/shape[1])
+                self.vdf_pick_region.position = position
+            if self.results_pick_region is not None:
+                shape = self.results_image.data.shape
+                position = (current_slice//shape[-1]/shape[-2], current_slice%shape[-1]/shape[-2])
+                self.results_pick_region.position = position
+        
+    @property
     def vdf_image(self):
-        if self._vdf_image is None:
+        if self._vdf_image is None and self.slice_image is not None:
             if self.slice_image.metadata.get('vdf_uuid'):
                 self._vdf_image = self.__api.library.get_data_item_by_uuid(uuid.UUID(self.slice_image.metadata.get('vdf_uuid')))
         return self._vdf_image
@@ -73,7 +91,7 @@ class NanoDiffPanelDelegate(object):
         
     @property
     def results_image(self):
-        if self._results_image is None:
+        if self._results_image is None and self.slice_image is not None:
             if self.slice_image.metadata.get('results_uuid'):
                 self._results_image = self.__api.library.get_data_item_by_uuid(uuid.UUID(self.slice_image.metadata.get('results_uuid')))
         return self._results_image
@@ -82,6 +100,18 @@ class NanoDiffPanelDelegate(object):
     def results_image(self, results_image):
         self._results_image = results_image
         update_metadata(self.slice_image, {'results_uuid': results_image.uuid.hex})
+    
+    @property
+    def single_image_peaks(self):
+        if self._single_image_peaks is None and self.slice_image is not None:
+            if self.slice_image.metadata.get('single_image_peaks_uuid'):
+                self._single_image_peaks = self.__api.library.get_data_item_by_uuid(uuid.UUID(self.slice_image.metadata.get('single_image_peaks_uuid')))
+        return self._single_image_peaks
+    
+    @single_image_peaks.setter
+    def single_image_peaks(self, single_image_peaks):
+        self._single_image_peaks = single_image_peaks
+        update_metadata(self.slice_image, {'single_image_peaks_uuid': single_image_peaks.uuid.hex})
 
     def create_panel_widget(self, ui, document_controller):
 
@@ -268,6 +298,13 @@ class NanoDiffPanelDelegate(object):
             self.find_peaks_thread = threading.Thread(target=run_find_peaks)
             self.find_peaks_thread.start()
             find_peaks_button.text = 'Abort'
+        
+        def find_peaks_single_button_clicked():
+            first_hexagon, second_hexagon, center, blurred_image = self._nanodiff_analyzer.process_nanodiff_image(self.slice_image.data)
+            if self.single_image_peaks is None:
+                self.single_image_peaks = self.__api.library.create_data_item()
+            self.update_single_image_peaks(first_hexagon, second_hexagon, center, blurred_image)
+            update_metadata(self.single_image_peaks, {'source_uuid': self.slice_image.uuid.hex})
             
         column = ui.create_column_widget()
         descriptor_row1 = ui.create_row_widget()
@@ -327,12 +364,16 @@ class NanoDiffPanelDelegate(object):
         checkbox_row.add_stretch()
         
         button_row2 = ui.create_row_widget()
-        start_button = ui.create_push_button_widget("Start Virtual DF")
+        start_button = ui.create_push_button_widget("Virtual DF")
         start_button.on_clicked = start_button_clicked
-        find_peaks_button = ui.create_push_button_widget("Find Peaks")
+        find_peaks_single_button = ui.create_push_button_widget("Find peaks single")
+        find_peaks_single_button.on_clicked = find_peaks_single_button_clicked
+        find_peaks_button = ui.create_push_button_widget("Find peaks stack")
         find_peaks_button.on_clicked = find_peaks_button_clicked
         button_row2.add(start_button)
-        button_row2.add_spacing(5)
+        button_row2.add_spacing(3)
+        button_row2.add(find_peaks_single_button)
+        button_row2.add_spacing(3)
         button_row2.add(find_peaks_button)
 
         column.add_spacing(10)
@@ -375,6 +416,28 @@ class NanoDiffPanelDelegate(object):
         xdata = self.__api.create_data_and_metadata(data, data_descriptor=data_descriptor)
         self.results_image.set_data_and_metadata(xdata)
         self.results_image.title = 'Peak_positions_of_{}'.format(os.path.splitext(os.path.split(self.filepath)[1])[0])
+    
+    def update_single_image_peaks(self, first_hexagon, second_hexagon, center, blurred_image):
+        self.single_image_peaks.set_data(blurred_image)
+        for region in self.single_image_peaks.regions:
+            if region.type == 'point-region':
+                self.single_image_peaks.remove_region(region)
+        shape = self.single_image_peaks.data.shape
+        if center is not None and not (np.array(center) == 0).all():
+            region = self.single_image_peaks.add_point_region(center[0]/shape[0], center[1]/shape[1])
+            region.label = 'center'
+        if first_hexagon is not None:
+            for i in range(len(first_hexagon)):
+                peak = first_hexagon[i]
+                if not (peak == 0).all():
+                    region = self.single_image_peaks.add_point_region(peak[0]/shape[0], peak[1]/shape[1])
+                    region.label = str(i+1)
+        if second_hexagon is not None:
+            for i in range(len(second_hexagon)):
+                peak = second_hexagon[i]
+                if not (peak == 0).all():
+                    region = self.single_image_peaks.add_point_region(peak[0]/shape[0], peak[1]/shape[1])
+                    region.label = str(i+7)            
     
 def update_metadata(data_item, new_metadata):
     metadata = data_item.metadata

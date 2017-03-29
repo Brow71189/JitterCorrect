@@ -10,7 +10,11 @@ import numpy as np
 from JitterWizard import correct_jitter
 import h5py
 import os
-from multiprocessing import Queue, Process
+import sys
+#needed on windows
+if not hasattr(sys, 'argv'):
+    sys.argv = ['']
+from multiprocessing import Queue, Process, set_executable, get_start_method
 import queue
 import threading
 import time
@@ -162,6 +166,9 @@ class NanoDiffAnalyzer(object):
         assert np.product(self.shape) == self.number_slices
         if self.number_processes is None:
             self.number_processes = os.cpu_count()
+        # Needed for method "spawn" (on Windows) to prevent mutliple Swift instances from being started
+        if get_start_method() == 'spawn':
+            set_executable(os.path.join(sys.exec_prefix, 'python.exe'))
         for i in range(self.number_processes):
             analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue, 
                                               self.max_number_peaks, self.second_ring_min_distance,
@@ -182,6 +189,14 @@ class NanoDiffAnalyzer(object):
         
         worker_handler.join()
         print(time.time() - starttime)
+    
+    def process_nanodiff_image(self, image):
+        analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue, 
+                                          self.max_number_peaks, self.second_ring_min_distance,
+                                          self.blur_radius, self.noise_tolerance, self.length_tolerance,
+                                          self.angle_tolerance)
+        first_hexagon, second_hexagon, center = analyzer.analyze_nanodiff_pattern(image)
+        return (first_hexagon, second_hexagon, center, analyzer.Jitter.blurred_image)
         
     def abort(self):
         self._abort_event.set()
