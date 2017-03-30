@@ -164,7 +164,7 @@ class NanoDiffAnalyzer(object):
         if self.shape is None:
             self.shape = (int(np.sqrt(self.number_slices)), int(np.sqrt(self.number_slices)))
         assert np.product(self.shape) == self.number_slices
-        if self.number_processes is None:
+        if self.number_processes is None or self.number_processes < 1:
             self.number_processes = os.cpu_count()
         # Needed for method "spawn" (on Windows) to prevent mutliple Swift instances from being started
         if get_start_method() == 'spawn':
