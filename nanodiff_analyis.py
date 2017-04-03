@@ -18,10 +18,11 @@ from multiprocessing import Queue, Process, set_executable, get_start_method
 import queue
 import threading
 import time
+import scipy.optimize
 
 class NanoDiffAnalyzerWorker(object):
     def __init__(self, hdf5filequeue, outqueue, max_number_peaks, second_ring_min_distance, blur_radius,
-                 noise_tolerance, length_tolerance, angle_tolerance):
+                 noise_tolerance, length_tolerance, angle_tolerance, minimum_peak_distance):
         self.hdf5filequeue = hdf5filequeue
         self.outqueue = outqueue
         self.max_number_peaks = max_number_peaks
@@ -31,6 +32,7 @@ class NanoDiffAnalyzerWorker(object):
         self.Jitter = correct_jitter.Jitter()
         self.blur_radius = blur_radius
         self.noise_tolerance = noise_tolerance
+        self.minimum_peak_distance = minimum_peak_distance
         self.image = None
         self.shape = None
         
@@ -52,7 +54,7 @@ class NanoDiffAnalyzerWorker(object):
     
     def _analysis_loop(self):
         while True:
-            index, image = self.hdf5filequeue.get(timeout=10)
+            index, image = self.hdf5filequeue.get(timeout=3)
             if index is None:
                 break
             res = self.analyze_nanodiff_pattern(image)
@@ -69,14 +71,67 @@ class NanoDiffAnalyzerWorker(object):
         first_ring, second_ring, center = self.sort_peaks(peaks)
         first_hexagon = second_hexagon = None
         if len(first_ring) > 4:
-            first_hexagon = self.find_hexagon(first_ring)
+            first_hexagon = self.find_hexagon(first_ring, center)
         if len(second_ring) > 4:
-            second_hexagon = self.find_hexagon(second_ring)
+            second_hexagon = self.find_hexagon(second_ring, center)
         
         if (second_hexagon is None and first_hexagon is not None and len(first_hexagon) > 0 and
             np.mean(np.sum((np.array(first_hexagon) - center)**2, axis=1)) > self.second_ring_min_distance*np.mean(self.shape)):
             second_hexagon = first_hexagon
             first_hexagon = None
+        
+        #remove peaks that are too close together
+        to_change = []
+        if first_hexagon is not None and len(first_hexagon) > 6:
+            for k in range(len(first_hexagon)):
+                for l in range(k+1, len(first_hexagon)):
+                    distance = np.sqrt(np.sum((first_hexagon[k] - first_hexagon[l])**2))
+                    if distance < self.minimum_peak_distance:
+                        to_change.append((k, l))
+            for entry in to_change:
+                if entry[0] < len(first_hexagon) and entry[1] < len(first_hexagon):
+                    first_hexagon[entry[0]] = np.rint((first_hexagon[entry[0]] + first_hexagon[entry[1]])/2).astype(np.int)
+                    first_hexagon.pop(entry[1])
+                    
+        to_change = []
+        if second_hexagon is not None and len(second_hexagon) > 6:
+            for k in range(len(second_hexagon)):
+                for l in range(k+1, len(second_hexagon)):
+                    distance = np.sqrt(np.sum((second_hexagon[k] - second_hexagon[l])**2))
+                    if distance < self.minimum_peak_distance:
+                        to_change.append((k, l))
+            for entry in to_change:
+                if entry[0] < len(second_hexagon) and entry[1] < len(second_hexagon):
+                    second_hexagon[entry[0]] = np.rint((second_hexagon[entry[0]] + second_hexagon[entry[1]])/2).astype(np.int)
+                    second_hexagon.pop(entry[1])
+        
+        #remove peaks whose intensity differs most from all others if more than 6 peaks were found for a ring
+        while first_hexagon is not None and len(first_hexagon) > 6:
+            largest_difference = (0, 0)
+            for k in range(len(first_hexagon)):
+                sum_other_peaks = 0
+                for l in range(len(first_hexagon)):
+                    if l != k:
+                        sum_other_peaks += image[tuple(first_hexagon[l])]
+                mean_other_peaks = sum_other_peaks/(len(first_hexagon)-1)
+                difference = np.abs(image[tuple(first_hexagon[k])] - mean_other_peaks)
+                if  difference > largest_difference[1]:
+                    largest_difference = (k, difference)
+            first_hexagon.pop(largest_difference[0])
+        
+        while second_hexagon is not None and len(second_hexagon) > 6:
+            largest_difference = (0, 0)
+            for k in range(len(second_hexagon)):
+                sum_other_peaks = 0
+                for l in range(len(second_hexagon)):
+                    if l != k:
+                        sum_other_peaks += image[tuple(second_hexagon[l])]
+                mean_other_peaks = sum_other_peaks/(len(second_hexagon)-1)
+                difference = np.abs(image[tuple(second_hexagon[k])] - mean_other_peaks)
+                if  difference > largest_difference[1]:
+                    largest_difference = (k, difference)
+            second_hexagon.pop(largest_difference[0])
+                
             
         return (first_hexagon, second_hexagon, center)
     
@@ -104,33 +159,49 @@ class NanoDiffAnalyzerWorker(object):
         
         return (first_ring_peaks_sorted, second_ring_peaks_sorted, center)
     
-    def find_hexagon(self, peaks_sorted):
+    def find_hexagon(self, peaks_sorted, center):
         angle_tolerance = self.angle_tolerance/180*np.pi
-        hexagon = []
-        peaks_added = []
-        for i in range(0, len(peaks_sorted)):
-            peak1 = peaks_sorted[i-2]
-            peak2 = peaks_sorted[i-1]
-            peak3 = peaks_sorted[i]
-            edge1 = peak1 - peak2
-            edge2 = peak3 - peak2
-            lengths = [np.sqrt(np.sum((edge1)**2)), np.sqrt(np.sum((edge2)**2))]
-            angle = np.arccos(np.dot(edge1, edge2)/(np.product(lengths)))
-            #print(peak1, lengths, angle*180/np.pi)
-            if (np.abs(lengths[0] - lengths[1]) < self.length_tolerance*np.mean(lengths) and
-                np.abs(angle - 2*np.pi/3) < angle_tolerance):
-                peak_index = i-2 if i-2 > 0 else len(peaks_sorted) + (i-2)
-                if not peak_index in peaks_added:
-                    hexagon.append(peak1)
-                    peaks_added.append(peak_index)
-                peak_index = i-1 if i-1 > 0 else len(peaks_sorted) + (i-1)
-                if not peak_index in peaks_added:
-                    hexagon.append(peak2)
-                    peaks_added.append(peak_index)
-                peak_index = i if i > 0 else len(peaks_sorted) + i
-                if not peak_index in peaks_added:
-                    hexagon.append(peak3)
-                    peaks_added.append(peak_index)
+        removed_peak = True
+        while removed_peak:
+            removed_peak = False
+            hexagon = []
+            peaks_added = []
+            for i in range(0, len(peaks_sorted)):
+                peak1 = peaks_sorted[i-2]
+                peak2 = peaks_sorted[i-1]
+                peak3 = peaks_sorted[i]
+                edge1 = peak1 - peak2
+                edge2 = peak3 - peak2
+                lengths = [np.sqrt(np.sum((edge1)**2)), np.sqrt(np.sum((edge2)**2))]
+                angle = np.arccos(np.dot(edge1, edge2)/(np.product(lengths)))
+                radii = [np.sqrt(np.sum((peak1 - center)**2)), np.sqrt(np.sum((peak2 - center)**2)), np.sqrt(np.sum((peak3 - center)**2))]
+                #print(peak1, lengths, angle*180/np.pi)
+                if (np.abs(lengths[0] - lengths[1]) < self.length_tolerance*np.mean(lengths) and
+                    np.abs(angle - 2*np.pi/3) < angle_tolerance):
+                    peak_index = i-2 if i-2 >= 0 else len(peaks_sorted) + (i-2)
+                    if np.abs(radii[0] - np.mean(radii[1:])) > self.length_tolerance*np.mean(radii):
+                        peaks_sorted.pop(peak_index)
+                        removed_peak = True
+                        break
+                    elif not peak_index in peaks_added:
+                        hexagon.append(peak1)
+                        peaks_added.append(peak_index)
+                    peak_index = i-1 if i-1 >= 0 else len(peaks_sorted) + (i-1)
+                    if np.abs(radii[1] - np.mean((radii[0], radii[2]))) > self.length_tolerance*np.mean(radii):
+                        peaks_sorted.pop(peak_index)
+                        removed_peak = True
+                        break
+                    elif not peak_index in peaks_added:
+                        hexagon.append(peak2)
+                        peaks_added.append(peak_index)
+                    peak_index = i if i >= 0 else len(peaks_sorted) + i
+                    if np.abs(radii[2] - np.mean(radii[:-1])) > self.length_tolerance*np.mean(radii):
+                        peaks_sorted.pop(peak_index)
+                        removed_peak = True
+                        break
+                    elif not peak_index in peaks_added:
+                        hexagon.append(peak3)
+                        peaks_added.append(peak_index)
         return hexagon
 
 class NanoDiffAnalyzer(object):
@@ -143,6 +214,7 @@ class NanoDiffAnalyzer(object):
         self.noise_tolerance = kwargs.get('noise_tolerance', 1)
         self.length_tolerance = kwargs.get('length_tolerance', 0.1)
         self.angle_tolerance = kwargs.get('angle_tolerance', 10)
+        self.minimum_peak_distance = kwargs.get('minimum_peak_distance', 40)
         self.first_peaks = self.second_peaks = self.centers = None
         self.number_slices = None
         self.number_processes = kwargs.get('number_processes', 3)
@@ -173,11 +245,12 @@ class NanoDiffAnalyzer(object):
             analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue, 
                                               self.max_number_peaks, self.second_ring_min_distance,
                                               self.blur_radius, self.noise_tolerance, self.length_tolerance,
-                                              self.angle_tolerance)
+                                              self.angle_tolerance, self.minimum_peak_distance)
             process = Process(target=analyzer._analysis_loop)
             process.daemon = True
             process.start()
             self._workers.append(process)
+            time.sleep(0.1)
         
         worker_handler = threading.Thread(target=self._worker_handler)
         worker_handler.daemon = True
@@ -187,16 +260,33 @@ class NanoDiffAnalyzer(object):
         result_handler.daemon = True
         result_handler.start()
         
-        worker_handler.join()
+        result_handler.join()
+        worker_handler.join(1)
+        if worker_handler.is_alive():
+            self.abort()
+            
         print(time.time() - starttime)
     
     def process_nanodiff_image(self, image):
         analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue, 
                                           self.max_number_peaks, self.second_ring_min_distance,
                                           self.blur_radius, self.noise_tolerance, self.length_tolerance,
-                                          self.angle_tolerance)
+                                          self.angle_tolerance, self.minimum_peak_distance)
         first_hexagon, second_hexagon, center = analyzer.analyze_nanodiff_pattern(image)
         return (first_hexagon, second_hexagon, center, analyzer.Jitter.blurred_image)
+    
+    def make_strain_map(self):
+        expanded_centers = np.expand_dims(self.centers, 2)
+        expanded_centers = np.repeat(expanded_centers, 6, axis=2)
+        centered_peaks = self.second_peaks - expanded_centers
+        radii = np.sqrt(np.sum((centered_peaks)**2, axis=-1))
+        angles = np.arctan2(centered_peaks[..., 0], centered_peaks[..., 1])
+        ellipse = np.zeros(self.second_peaks.shape[:2] + (3,))
+        for k in range(radii.shape[0]):
+            for i in range(radii.shape[1]):
+                if not (self.second_peaks[k, i] == 0).all():
+                    ellipse[k, i] = np.array(fit_ellipse(angles[k, i], radii[k, i]))
+        return ellipse
         
     def abort(self):
         self._abort_event.set()
@@ -211,12 +301,14 @@ class NanoDiffAnalyzer(object):
                     worker.join()
                     self._workers.remove(worker)
                     workers_finished += 1
+                time.sleep(0.1)
             time.sleep(0.1)
     
     def _result_handler(self):
         self.first_peaks = np.zeros(tuple(self.shape) + (6, 2))
         self.second_peaks = np.zeros(tuple(self.shape) + (6, 2))
         self.centers = np.zeros(tuple(self.shape) + (2,))
+        errorfile = open('errors.txt', 'w+')
         i = 0
         while i < self.number_slices and not self._abort_event.is_set():
             try:
@@ -226,17 +318,23 @@ class NanoDiffAnalyzer(object):
             else:
                 if i%100 == 0:
                     print('Processed {:.0f} out of {:.0f} slices.'.format(i, self.number_slices))
+                x_coord = index%self.shape[1]
+                y_coord = index//self.shape[1]
                 try:
-                    x_coord = index%self.shape[1]
-                    y_coord = index//self.shape[1]
                     if first_hexagon is not None and len(first_hexagon) > 0:
                         self.first_peaks[y_coord, x_coord, :len(first_hexagon)] = np.array(first_hexagon)
+                except Exception as e:
+                    errorfile.write('{:.0f}, first hexagon: {}\n'.format(index, str(first_hexagon)))
+                    print('Error in first hexagon in slice {:.0f}: {}'.format(index, str(e)))
+                try:
                     if second_hexagon is not None and len(second_hexagon) > 0:
                         self.second_peaks[y_coord, x_coord, :len(second_hexagon)] = np.array(second_hexagon)
-                    self.centers[y_coord, x_coord] = center
                 except Exception as e:
-                    print('Error in slice {:.0f}: {}'.format(i, str(e)))
+                    errorfile.write('{:.0f}, second hexagon: {}\n'.format(index, str(second_hexagon)))
+                    print('Error in second hexagon in slice {:.0f}: {}'.format(index, str(e)))
+                self.centers[y_coord, x_coord] = center
                 i += 1
+        errorfile.close()
 
     def _fill_filequeue(self):
             _filelink = openhdf5file(self.filename)
@@ -245,7 +343,7 @@ class NanoDiffAnalyzer(object):
             i = 0
             while i < self.number_slices and not self._abort_event.is_set():
                 try:
-                    self._filequeue.put((i, gethdf5slice(i, _filelink)), timeout=1)
+                    self._filequeue.put((i, gethdf5slice(i, _filelink)), timeout=0.2)
                 except queue.Full:
                     pass
                 else:
@@ -253,6 +351,27 @@ class NanoDiffAnalyzer(object):
             _filelink.close()
             for i in range(len(self._workers)):
                 self._filequeue.put((None, None))
+                
+def ellipse(polar_angle, a, b, rotation):
+    """
+    Returns the radius of a point lying on an ellipse with the given parameters.
+    """
+    return a*b/np.sqrt((b*np.cos(polar_angle-rotation))**2+(a*np.sin(polar_angle-rotation))**2)
+
+def fit_ellipse(angles, radii):
+    if len(angles) != len(radii):
+        raise ValueError('The input sequences have to have the same lenght!.')
+    if len(angles) < 3:
+        print('Can only fit a circle and not an ellipse to a set of less than 3 points.')
+        return (np.mean(radii), np.mean(radii), 0.)
+    try:
+        popt, pcov = scipy.optimize.curve_fit(ellipse, angles, radii, p0=(np.mean(radii), np.mean(radii), 0.0))
+    except:
+        print('Fit of the ellipse faied. Using a circle as best approximation of the data.')
+        return (np.mean(radii), np.mean(radii), 0.)
+    else:
+        popt[2] %= np.pi
+        return tuple(popt)
 
 def positive_angle(angle):
     """

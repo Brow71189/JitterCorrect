@@ -34,6 +34,7 @@ class NanoDiffPanelDelegate(object):
         self._results_image = None
         self._results_pick_region = None
         self._single_image_peaks = None
+        self._strain_map = None
         self.h5file = None
         self._last_opened_folder = ''
         self._nanodiff_analyzer = nanodiff_analyis.NanoDiffAnalyzer()
@@ -49,11 +50,11 @@ class NanoDiffPanelDelegate(object):
             self._current_slice = current_slice
             if self.vdf_pick_region is not None:
                 shape = self.vdf_image.data.shape
-                position = (current_slice//shape[1]/shape[0], current_slice%shape[1]/shape[1])
+                position = ((current_slice//shape[1]+0.5)/shape[0], (current_slice%shape[1]+0.5)/shape[1])
                 self.vdf_pick_region.position = position
             if self.results_pick_region is not None:
                 shape = self.results_image.data.shape
-                position = (current_slice//shape[-1]/shape[-2], current_slice%shape[-1]/shape[-2])
+                position = ((current_slice//shape[-1]+0.5)/shape[-2], (current_slice%shape[-1]+0.5)/shape[-2])
                 self.results_pick_region.position = position
         
     @property
@@ -120,6 +121,19 @@ class NanoDiffPanelDelegate(object):
         self._single_image_peaks = single_image_peaks
         if single_image_peaks is not None:
             update_metadata(self.slice_image, {'single_image_peaks_uuid': single_image_peaks.uuid.hex})
+    
+    @property
+    def strain_map(self):
+        if self._strain_map is None and self.slice_image is not None:
+            if self.slice_image.metadata.get('strain_map_uuid'):
+                self._strain_map = self.__api.library.get_data_item_by_uuid(uuid.UUID(self.slice_image.metadata.get('strain_map_uuid')))
+        return self._strain_map
+    
+    @strain_map.setter
+    def strain_map(self, strain_map):
+        self._strain_map = strain_map
+        if strain_map is not None:
+            update_metadata(self.slice_image, {'strain_map_uuid': strain_map.uuid.hex})
 
     def create_panel_widget(self, ui, document_controller):
         self.document_controller = document_controller
@@ -177,7 +191,21 @@ class NanoDiffPanelDelegate(object):
                 if not os.path.isfile(self.filepath):
                     self.filepath = None
                 open_button_clicked(create_new_data_item=False)
-                
+                if self.results_image is not None:
+                    parameters = self.results_image.metadata.get('peak_finding_parameters')
+                    if parameters is not None:
+                        for key, value in parameters.items():
+                            setattr(self._nanodiff_analyzer, key, value)
+                    if self.settings_window_open:
+                        self.settings_window.update_fields()
+                elif self.single_image_peaks is not None:
+                    parameters = self.single_image_peaks.metadata.get('peak_finding_paramters')
+                    if parameters is not None:
+                        for key, value in parameters.items():
+                            setattr(self._nanodiff_analyzer, key, value)
+                    if self.settings_window_open:
+                        self.settings_window.update_fields()
+                            
         def last_button_clicked():
             self.current_slice -= 1
             self.update_slice_image()
@@ -228,7 +256,7 @@ class NanoDiffPanelDelegate(object):
                     if self.vdf_pick_region is None:
                         x_coord = self.current_slice%self.vdf_image.data.shape[1]
                         y_coord = self.current_slice//self.vdf_image.data.shape[1]
-                        self.vdf_pick_region = self.vdf_image.add_point_region(y_coord/self.vdf_image.data.shape[0], x_coord/self.vdf_image.data.shape[1])
+                        self.vdf_pick_region = self.vdf_image.add_point_region((y_coord+0.5)/self.vdf_image.data.shape[0], (x_coord+0.5)/self.vdf_image.data.shape[1])
                         self.vdf_pick_region.set_property('is_bounds_constrained', True)
                         self.vdf_pick_region.label = 'Pick'
                     property_changed_event = self.vdf_pick_region.get_property('property_changed_event')
@@ -239,7 +267,7 @@ class NanoDiffPanelDelegate(object):
                     if self.results_pick_region is None:
                         x_coord = self.current_slice%self.results_image.data.shape[-1]
                         y_coord = self.current_slice//self.results_image.data.shape[-1]
-                        self.results_pick_region = self.results_image.add_point_region(y_coord/self.results_image.data.shape[-2], x_coord/self.results_image.data.shape[-1])
+                        self.results_pick_region = self.results_image.add_point_region((y_coord+0.5)/self.results_image.data.shape[-2], (x_coord+0.5)/self.results_image.data.shape[-1])
                         self.results_pick_region.set_property('is_bounds_constrained', True)
                         self.results_pick_region.label = 'Pick'
                     property_changed_event = self.results_pick_region.get_property('property_changed_event')
@@ -322,6 +350,23 @@ class NanoDiffPanelDelegate(object):
             self.update_single_image_peaks(first_hexagon, second_hexagon, center, blurred_image)
             update_metadata(self.single_image_peaks, {'source_uuid': self.slice_image.uuid.hex})
             
+        def make_strain_map_button_clicked():
+            if self.results_image is not None:
+                if self._nanodiff_analyzer.second_peaks is None:
+                    second_peaks = self.results_image.data[6:12]
+                    second_peaks = np.moveaxis(second_peaks, 0, -1)
+                    second_peaks = np.moveaxis(second_peaks, 0, -1)
+                    self._nanodiff_analyzer.second_peaks = second_peaks
+                    centers = self.results_image.data[12]
+                    centers = np.moveaxis(centers, 0, -1)
+                    self._nanodiff_analyzer.centers = centers
+                if self.strain_map is None:
+                    self.strain_map = self.__api.library.create_data_item()
+                data = self._nanodiff_analyzer.make_strain_map()
+                self.update_strain_map(data)
+                
+                    
+            
         column = ui.create_column_widget()
         descriptor_row1 = ui.create_row_widget()
         descriptor_row1.add(ui.create_label_widget("Path to HDF5-file:"))
@@ -394,6 +439,12 @@ class NanoDiffPanelDelegate(object):
         button_row2.add(find_peaks_single_button)
         button_row2.add_spacing(3)
         button_row2.add(find_peaks_button)
+        
+        button_row3 = ui.create_row_widget()
+        make_strain_map_button = ui.create_push_button_widget('Make strain map')
+        make_strain_map_button.on_clicked = make_strain_map_button_clicked
+        button_row3.add(make_strain_map_button)
+        button_row3.add_stretch()
 
         column.add_spacing(10)
         column.add(descriptor_row1)
@@ -411,6 +462,8 @@ class NanoDiffPanelDelegate(object):
         column.add(checkbox_row)
         column.add_spacing(15)
         column.add(button_row2)
+        column.add_spacing(15)
+        column.add(button_row3)
         column.add_stretch()
 
         return column
@@ -441,7 +494,8 @@ class NanoDiffPanelDelegate(object):
                       'blur_radius': self._nanodiff_analyzer.blur_radius,
                       'noise_tolerance': self._nanodiff_analyzer.noise_tolerance,
                       'length_tolerance': self._nanodiff_analyzer.length_tolerance,
-                      'angle_tolerance': self._nanodiff_analyzer.angle_tolerance}
+                      'angle_tolerance': self._nanodiff_analyzer.angle_tolerance,
+                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance}
         update_metadata(self.results_image, {'peak_finding_parameters': parameters})
     
     def update_single_image_peaks(self, first_hexagon, second_hexagon, center, blurred_image):
@@ -452,7 +506,8 @@ class NanoDiffPanelDelegate(object):
                       'blur_radius': self._nanodiff_analyzer.blur_radius,
                       'noise_tolerance': self._nanodiff_analyzer.noise_tolerance,
                       'length_tolerance': self._nanodiff_analyzer.length_tolerance,
-                      'angle_tolerance': self._nanodiff_analyzer.angle_tolerance}
+                      'angle_tolerance': self._nanodiff_analyzer.angle_tolerance,
+                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance}
         update_metadata(self.single_image_peaks, {'peak_finding_parameters': parameters})
         
         for region in self.single_image_peaks.regions:
@@ -474,6 +529,22 @@ class NanoDiffPanelDelegate(object):
                 if not (peak == 0).all():
                     region = self.single_image_peaks.add_point_region(peak[0]/shape[0], peak[1]/shape[1])
                     region.label = str(i+7)
+                    
+    def update_strain_map(self, data):
+        #data = np.moveaxis(data, -1, 0)
+        data_descriptor = self.__api.create_data_descriptor(is_sequence=False, collection_dimension_count=2, datum_dimension_count=1)
+        xdata = self.__api.create_data_and_metadata(data, data_descriptor=data_descriptor)
+        self.strain_map.set_data_and_metadata(xdata)
+        self.strain_map.title = 'Strain_map_of_{}'.format(os.path.splitext(os.path.split(self.filepath)[1])[0])
+        self.strain_map._data_item.caption = 'Axes description:\n\t1. Ellipse paramters (axis 1, axis 2, angle)\n\t2. Map y-coordinate\n\t3. Map x-coordinate'
+        parameters = {'max_number_peaks': self._nanodiff_analyzer.max_number_peaks,
+                      'second_ring_min_distance': self._nanodiff_analyzer.second_ring_min_distance,
+                      'blur_radius': self._nanodiff_analyzer.blur_radius,
+                      'noise_tolerance': self._nanodiff_analyzer.noise_tolerance,
+                      'length_tolerance': self._nanodiff_analyzer.length_tolerance,
+                      'angle_tolerance': self._nanodiff_analyzer.angle_tolerance,
+                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance}
+        update_metadata(self.strain_map, {'peak_finding_parameters': parameters})
     
     def show_config_box(self):
         dc = self.document_controller._document_controller
@@ -484,6 +555,8 @@ class NanoDiffPanelDelegate(object):
                 super(ConfigDialog, self).__init__(ui, include_cancel=False)
                 def report_window_close():
                     nanodiffGUI.settings_window_open = False
+                    if hasattr(nanodiffGUI, 'settings_window'):
+                        delattr(nanodiffGUI, 'settings_window')
                 self.on_accept = report_window_close
                 self.on_reject = report_window_close
 
@@ -547,11 +620,22 @@ class NanoDiffPanelDelegate(object):
                         try:
                             angle_tolerance = float(text)
                         except ValueError:
-                            length_tolerance_field.text = '{:.1f}'.format(nanodiffGUI._nanodiff_analyzer.length_tolerance)
+                            angle_tolerance_field.text = '{:.1f}'.format(nanodiffGUI._nanodiff_analyzer.angle_tolerance)
                         else:
                             nanodiffGUI._nanodiff_analyzer.angle_tolerance = angle_tolerance
                     else:
                         angle_tolerance_field.text = '{:.1f}'.format(nanodiffGUI._nanodiff_analyzer.angle_tolerance)
+                        
+                def minimum_peak_distance_finished(text):
+                    if len(text) > 0:
+                        try:
+                            minimum_peak_distance = int(text)
+                        except ValueError:
+                            minimum_peak_distance_field.text = '{:.0f}'.format(nanodiffGUI._nanodiff_analyzer.minimum_peak_distance)
+                        else:
+                            nanodiffGUI._nanodiff_analyzer.minimum_peak_distance = minimum_peak_distance
+                    else:
+                        minimum_peak_distance_field.text = '{:.0f}'.format(nanodiffGUI._nanodiff_analyzer.minimum_peak_distance)
                         
                 def number_processes_finished(text):
                     if len(text) > 0:
@@ -573,6 +657,7 @@ class NanoDiffPanelDelegate(object):
                 row7 = self.ui.create_row_widget()
                 row8 = self.ui.create_row_widget()                
                 row9 = self.ui.create_row_widget()
+                row10 = self.ui.create_row_widget()
                 
                 blur_radius_field = self.ui.create_line_edit_widget()
                 blur_radius_field.on_editing_finished = blur_radius_finished
@@ -591,6 +676,9 @@ class NanoDiffPanelDelegate(object):
                 
                 angle_tolerance_field = self.ui.create_line_edit_widget()
                 angle_tolerance_field.on_editing_finished = angle_tolerance_finished
+                
+                minimum_peak_distance_field = self.ui.create_line_edit_widget()
+                minimum_peak_distance_field.on_editing_finished = minimum_peak_distance_finished
                 
                 number_processes_field = self.ui.create_line_edit_widget()
                 number_processes_field.on_editing_finished = number_processes_finished
@@ -639,15 +727,21 @@ class NanoDiffPanelDelegate(object):
                 row7.add_stretch()
                 
                 row8.add_spacing(5)
-                row8.add(self.ui.create_label_widget('Additional parameters:'))
+                row8.add(self.ui.create_label_widget('Peaks separated by less than this number of pixels will be considered as one peak: '))
+                row8.add(minimum_peak_distance_field)
                 row8.add_spacing(5)
                 row8.add_stretch()
                 
                 row9.add_spacing(5)
-                row9.add(self.ui.create_label_widget('Number of processor cores to use for map analysis: '))
-                row9.add(number_processes_field)
+                row9.add(self.ui.create_label_widget('Additional parameters:'))
                 row9.add_spacing(5)
                 row9.add_stretch()
+                
+                row10.add_spacing(5)
+                row10.add(self.ui.create_label_widget('Number of processor cores to use for map analysis: '))
+                row10.add(number_processes_field)
+                row10.add_spacing(5)
+                row10.add_stretch()
                 
                 self.content.add_spacing(5)
                 self.content.add(row1)
@@ -663,24 +757,31 @@ class NanoDiffPanelDelegate(object):
                 self.content.add(row6)
                 self.content.add_spacing(5)
                 self.content.add(row7)
-                self.content.add_spacing(30)
+                self.content.add_spacing(5)
                 self.content.add(row8)
-                self.content.add_spacing(15)
+                self.content.add_spacing(30)
                 self.content.add(row9)
+                self.content.add_spacing(15)
+                self.content.add(row10)
                 self.content.add_spacing(5)
                 self.content.add_stretch()
                 
-                blur_radius_finished('')
-                noise_tolerance_finished('')
-                max_number_peaks_finished('')
-                second_ring_min_distance_finished('')
-                length_tolerance_finished('')
-                angle_tolerance_finished('')
-                number_processes_finished('')
+                def update_fields():
+                    blur_radius_finished('')
+                    noise_tolerance_finished('')
+                    max_number_peaks_finished('')
+                    second_ring_min_distance_finished('')
+                    length_tolerance_finished('')
+                    angle_tolerance_finished('')
+                    number_processes_finished('')
+                    minimum_peak_distance_finished('')
+                self.update_fields = update_fields
+                update_fields()
                 
         if not self.settings_window_open:
             self.settings_window_open = True
-            ConfigDialog(dc.ui, self).show()
+            self.settings_window = ConfigDialog(dc.ui, self)
+            self.settings_window.show()
     
 def update_metadata(data_item, new_metadata):
     metadata = data_item.metadata
