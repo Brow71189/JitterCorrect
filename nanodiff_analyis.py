@@ -35,23 +35,23 @@ class NanoDiffAnalyzerWorker(object):
         self.minimum_peak_distance = minimum_peak_distance
         self.image = None
         self.shape = None
-        
+
     @property
     def blur_radius(self):
         return self.Jitter.blur_radius
-    
+
     @blur_radius.setter
     def blur_radius(self, blur_radius):
         self.Jitter.blur_radius = blur_radius
-        
+
     @property
     def noise_tolerance(self):
         return self.Jitter.noise_tolerance
-    
+
     @noise_tolerance.setter
     def noise_tolerance(self, noise_tolerance):
         self.Jitter.noise_tolerance = noise_tolerance
-    
+
     def _analysis_loop(self):
         while True:
             index, image = self.hdf5filequeue.get(timeout=3)
@@ -59,13 +59,13 @@ class NanoDiffAnalyzerWorker(object):
                 break
             res = self.analyze_nanodiff_pattern(image)
             self.outqueue.put((index,) + res)
-    
+
     def analyze_nanodiff_pattern(self, image):
         self.image = image
         self.shape = self.image.shape
         self.Jitter.image = self.image
         peaks = self.Jitter.local_maxima[1]
-        
+
         if len(peaks) > self.max_number_peaks:
             peaks = peaks[:self.max_number_peaks]
         first_ring, second_ring, center = self.sort_peaks(peaks)
@@ -74,12 +74,12 @@ class NanoDiffAnalyzerWorker(object):
             first_hexagon = self.find_hexagon(first_ring, center)
         if len(second_ring) > 4:
             second_hexagon = self.find_hexagon(second_ring, center)
-        
+
         if (second_hexagon is None and first_hexagon is not None and len(first_hexagon) > 0 and
             np.mean(np.sum((np.array(first_hexagon) - center)**2, axis=1)) > self.second_ring_min_distance*np.mean(self.shape)):
             second_hexagon = first_hexagon
             first_hexagon = None
-        
+
         #remove peaks that are too close together
         to_change = []
         if first_hexagon is not None and len(first_hexagon) > 6:
@@ -92,7 +92,7 @@ class NanoDiffAnalyzerWorker(object):
                 if entry[0] < len(first_hexagon) and entry[1] < len(first_hexagon):
                     first_hexagon[entry[0]] = np.rint((first_hexagon[entry[0]] + first_hexagon[entry[1]])/2).astype(np.int)
                     first_hexagon.pop(entry[1])
-                    
+
         to_change = []
         if second_hexagon is not None and len(second_hexagon) > 6:
             for k in range(len(second_hexagon)):
@@ -104,7 +104,7 @@ class NanoDiffAnalyzerWorker(object):
                 if entry[0] < len(second_hexagon) and entry[1] < len(second_hexagon):
                     second_hexagon[entry[0]] = np.rint((second_hexagon[entry[0]] + second_hexagon[entry[1]])/2).astype(np.int)
                     second_hexagon.pop(entry[1])
-        
+
         #remove peaks whose intensity differs most from all others if more than 6 peaks were found for a ring
         while first_hexagon is not None and len(first_hexagon) > 6:
             largest_difference = (0, 0)
@@ -118,7 +118,7 @@ class NanoDiffAnalyzerWorker(object):
                 if  difference > largest_difference[1]:
                     largest_difference = (k, difference)
             first_hexagon.pop(largest_difference[0])
-        
+
         while second_hexagon is not None and len(second_hexagon) > 6:
             largest_difference = (0, 0)
             for k in range(len(second_hexagon)):
@@ -131,10 +131,10 @@ class NanoDiffAnalyzerWorker(object):
                 if  difference > largest_difference[1]:
                     largest_difference = (k, difference)
             second_hexagon.pop(largest_difference[0])
-                
-            
+
+
         return (first_hexagon, second_hexagon, center)
-    
+
     def sort_peaks(self, peaks):
         peaks = np.array(peaks)
         center = peaks[0]
@@ -156,9 +156,9 @@ class NanoDiffAnalyzerWorker(object):
                 second_ring_peaks.append(peaks[i])
         first_ring_peaks_sorted = sorted(first_ring_peaks, key=lambda value: positive_angle(np.arctan2(*(value - center))))
         second_ring_peaks_sorted = sorted(second_ring_peaks, key=lambda value: positive_angle(np.arctan2(*(value - center))))
-        
+
         return (first_ring_peaks_sorted, second_ring_peaks_sorted, center)
-    
+
     def find_hexagon(self, peaks_sorted, center):
         angle_tolerance = self.angle_tolerance/180*np.pi
         removed_peak = True
@@ -225,7 +225,7 @@ class NanoDiffAnalyzer(object):
         #self._stop_event = threading.Event()
         self._number_slices_set_event = threading.Event()
         self._abort_event = threading.Event()
-        
+
     def process_nanodiff_map(self):
         starttime = time.time()
         self._abort_event.clear()
@@ -235,6 +235,8 @@ class NanoDiffAnalyzer(object):
         self._number_slices_set_event.clear()
         if self.shape is None:
             self.shape = (int(np.sqrt(self.number_slices)), int(np.sqrt(self.number_slices)))
+        else:
+            self.number_slices = np.product(self.shape)
         assert np.product(self.shape) == self.number_slices
         if self.number_processes is None or self.number_processes < 1:
             self.number_processes = os.cpu_count()
@@ -242,39 +244,40 @@ class NanoDiffAnalyzer(object):
         if get_start_method() == 'spawn':
             set_executable(os.path.join(sys.exec_prefix, 'python.exe'))
         for i in range(self.number_processes):
-            analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue, 
+            analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue,
                                               self.max_number_peaks, self.second_ring_min_distance,
                                               self.blur_radius, self.noise_tolerance, self.length_tolerance,
                                               self.angle_tolerance, self.minimum_peak_distance)
             process = Process(target=analyzer._analysis_loop)
             process.daemon = True
+            time.sleep(0.1)
             process.start()
             self._workers.append(process)
             time.sleep(0.1)
-        
+
         worker_handler = threading.Thread(target=self._worker_handler)
         worker_handler.daemon = True
         worker_handler.start()
-        
+
         result_handler = threading.Thread(target=self._result_handler)
         result_handler.daemon = True
         result_handler.start()
-        
+
         result_handler.join()
         worker_handler.join(1)
         if worker_handler.is_alive():
             self.abort()
-            
+
         print(time.time() - starttime)
-    
+
     def process_nanodiff_image(self, image):
-        analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue, 
+        analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue,
                                           self.max_number_peaks, self.second_ring_min_distance,
                                           self.blur_radius, self.noise_tolerance, self.length_tolerance,
                                           self.angle_tolerance, self.minimum_peak_distance)
         first_hexagon, second_hexagon, center = analyzer.analyze_nanodiff_pattern(image)
         return (first_hexagon, second_hexagon, center, analyzer.Jitter.blurred_image)
-    
+
     def make_strain_map(self):
         expanded_centers = np.expand_dims(self.centers, 2)
         expanded_centers = np.repeat(expanded_centers, 6, axis=2)
@@ -287,10 +290,10 @@ class NanoDiffAnalyzer(object):
                 if not (self.second_peaks[k, i] == 0).all():
                     ellipse[k, i] = np.array(fit_ellipse(angles[k, i], radii[k, i]))
         return ellipse
-        
+
     def abort(self):
         self._abort_event.set()
-        
+
     def _worker_handler(self):
         workers_finished = 0
         while workers_finished < self.number_processes:
@@ -303,7 +306,7 @@ class NanoDiffAnalyzer(object):
                     workers_finished += 1
                 time.sleep(0.1)
             time.sleep(0.1)
-    
+
     def _result_handler(self):
         self.first_peaks = np.zeros(tuple(self.shape) + (6, 2))
         self.second_peaks = np.zeros(tuple(self.shape) + (6, 2))
@@ -351,7 +354,7 @@ class NanoDiffAnalyzer(object):
             _filelink.close()
             for i in range(len(self._workers)):
                 self._filequeue.put((None, None))
-                
+
 def ellipse(polar_angle, a, b, rotation):
     """
     Returns the radius of a point lying on an ellipse with the given parameters.
@@ -389,7 +392,7 @@ def openhdf5file(hdf5filename):
 def gethdf5slice(slicenumber, hdf5filelink):
     hdf5slice = hdf5filelink['data/science_data/data'][slicenumber,:]
     return hdf5slice
-        
+
 if __name__ == '__main__':
     #first_peaks, second_peaks, centers = process_nanodiff_map('/3tb/nanodiffraction_maps/20161128_171207/tt.h5')
     #fp, sp, c = analyze_nanodiff_pattern(57, openhdf5file('/3tb/nanodiffraction_maps/20161128_171207/tt.h5'))

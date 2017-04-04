@@ -35,10 +35,10 @@ def vdf(hdf5filelink,roirange):
     xmin = roirange['roixmin']
     xmax = roirange['roixmax']
     a = hdf5filelink['data/science_data/data'][:,ymin:ymax,xmin:xmax]
-    b = np.average(a, axis=1)
-    c = np.average(b, axis=1)
+    a = np.average(a, axis=1)
+    a = np.average(a, axis=1)
     #vdfx =int(1+math.sqrt(1+c.shape[0]))
-    vdfx = int(np.sqrt(b.shape[0]))
-    vdfy = int(c.shape[0]/vdfx)
-    vdf = np.reshape(c, (vdfy,vdfx))
-    return vdf
+    vdfy = int(np.sqrt(a.shape[0]))
+    vdfx = int(a.shape[0]/vdfy)
+    a = np.reshape(a[:vdfx*vdfy], (vdfy,vdfx))
+    return a
