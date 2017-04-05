@@ -72,8 +72,12 @@ class NanoDiffAnalyzerWorker(object):
         first_hexagon = second_hexagon = None
         if len(first_ring) > 4:
             first_hexagon = self.find_hexagon(first_ring, center)
+            if len(first_hexagon) == 0:
+                first_hexagon = None
         if len(second_ring) > 4:
             second_hexagon = self.find_hexagon(second_ring, center)
+            if len(second_hexagon) == 0:
+                second_hexagon = None
 
         if (second_hexagon is None and first_hexagon is not None and len(first_hexagon) > 0 and
             np.mean(np.sum((np.array(first_hexagon) - center)**2, axis=1)) > self.second_ring_min_distance*np.mean(self.shape)):
@@ -207,7 +211,7 @@ class NanoDiffAnalyzerWorker(object):
 class NanoDiffAnalyzer(object):
     def __init__(self, **kwargs):
         self.filename = kwargs.get('filename')
-        self.shape = kwargs.get('shape')
+        self.shape = kwargs.get('shape', (255,256))
         self.max_number_peaks = kwargs.get('max_number_peaks', 20)
         self.second_ring_min_distance = kwargs.get('second_ring_min_distance', 0.5)
         self.blur_radius = kwargs.get('blur_radius', 10)
