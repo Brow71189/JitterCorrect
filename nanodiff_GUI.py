@@ -554,7 +554,8 @@ class NanoDiffPanelDelegate(object):
                       'noise_tolerance': self._nanodiff_analyzer.noise_tolerance,
                       'length_tolerance': self._nanodiff_analyzer.length_tolerance,
                       'angle_tolerance': self._nanodiff_analyzer.angle_tolerance,
-                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance}
+                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance,
+                      'maximum_peak_radius': self._nanodiff_analyzer.maximum_peak_radius}
         update_metadata(self.results_image, {'peak_finding_parameters': parameters})
 
     def update_single_image_peaks(self, first_hexagon, second_hexagon, center, blurred_image):
@@ -566,7 +567,8 @@ class NanoDiffPanelDelegate(object):
                       'noise_tolerance': self._nanodiff_analyzer.noise_tolerance,
                       'length_tolerance': self._nanodiff_analyzer.length_tolerance,
                       'angle_tolerance': self._nanodiff_analyzer.angle_tolerance,
-                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance}
+                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance,
+                      'maximum_peak_radius': self._nanodiff_analyzer.maximum_peak_radius}
         update_metadata(self.single_image_peaks, {'peak_finding_parameters': parameters})
 
         for region in self.single_image_peaks.regions:
@@ -602,7 +604,8 @@ class NanoDiffPanelDelegate(object):
                       'noise_tolerance': self._nanodiff_analyzer.noise_tolerance,
                       'length_tolerance': self._nanodiff_analyzer.length_tolerance,
                       'angle_tolerance': self._nanodiff_analyzer.angle_tolerance,
-                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance}
+                      'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance,
+                      'maximum_peak_radius': self._nanodiff_analyzer.maximum_peak_radius}
         update_metadata(self.strain_map, {'peak_finding_parameters': parameters})
     
     def update_pick_regions(self, position):
