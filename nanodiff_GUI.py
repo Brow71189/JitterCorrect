@@ -35,6 +35,7 @@ class NanoDiffPanelDelegate(object):
         self._results_pick_region = None
         self._single_image_peaks = None
         self._strain_map = None
+        self._strain_map_pick_region = None
         self.h5file = None
         self._last_opened_folder = ''
         self._nanodiff_analyzer = nanodiff_analyis.NanoDiffAnalyzer()
@@ -48,14 +49,16 @@ class NanoDiffPanelDelegate(object):
     def current_slice(self, current_slice):
         if current_slice != self._current_slice:
             self._current_slice = current_slice
-            if self.vdf_pick_region is not None:
+            shape = None
+            if self.vdf_image is not None:
                 shape = self.vdf_image.data.shape
-                position = ((current_slice//shape[1]+0.5)/shape[0], (current_slice%shape[1]+0.5)/shape[1])
-                self.vdf_pick_region.position = position
-            if self.results_pick_region is not None:
+            elif self.results_image is not None:
                 shape = self.results_image.data.shape
-                position = ((current_slice//shape[-1]+0.5)/shape[-2], (current_slice%shape[-1]+0.5)/shape[-2])
-                self.results_pick_region.position = position
+            elif self.strain_map is not None:
+                shape = self.strain_map.data.shape
+            if shape is not None:
+                position = ((current_slice//shape[1]+0.5)/shape[0], (current_slice%shape[1]+0.5)/shape[1])
+                self.update_pick_regions(position)
 
     @property
     def vdf_image(self):
@@ -135,6 +138,19 @@ class NanoDiffPanelDelegate(object):
         if strain_map is not None:
             update_metadata(self.slice_image, {'strain_map_uuid': strain_map.uuid.hex})
 
+    @property
+    def strain_map_pick_region(self):
+        if self._strain_map_pick_region is None:
+            if self.strain_map is not None and self.strain_map.metadata.get('pick_region_uuid'):
+                self._strain_map_pick_region = self.__api.library.get_graphic_by_uuid(uuid.UUID(self.strain_map.metadata.get('pick_region_uuid')))
+        return self._strain_map_pick_region
+
+    @strain_map_pick_region.setter
+    def strain_map_pick_region(self, strain_map_pick_region):
+        self._strain_map_pick_region = strain_map_pick_region
+        if strain_map_pick_region is not None:
+            update_metadata(self.strain_map, {'pick_region_uuid': strain_map_pick_region.uuid.hex})
+
     def create_panel_widget(self, ui, document_controller):
         self.document_controller = document_controller
 
@@ -168,8 +184,8 @@ class NanoDiffPanelDelegate(object):
 
             if self.slice_image is None or (self.slice_image.metadata.get('source_file_path') != self.filepath and
                                             create_new_data_item):
-                self.current_slice = 0
                 self.slice_image = self.__api.library.create_data_item()
+                self.current_slice = 0
             else:
                 self.current_slice = self.slice_image.metadata.get('current_slice', 0)
             self.h5file = hdf5handler.openhdf5file(self.filepath)
@@ -178,6 +194,8 @@ class NanoDiffPanelDelegate(object):
             self.results_image = None
             self.results_pick_region = None
             self.single_image_peaks = None
+            self.strain_map = None
+            self.strain_map_pick_region = None
             self.update_slice_image()
             update_metadata(self.slice_image, {'source_file_path': self.filepath})
 
@@ -229,11 +247,7 @@ class NanoDiffPanelDelegate(object):
         def vdf_pick_region_changed(key):
             if key == 'position':
                 position = self.vdf_pick_region.position
-                if self.results_pick_region is not None and not np.isclose(self.results_pick_region.position, position).all():
-                    self._current_slice = int(position[0]*self.vdf_image.data.shape[0])*self.vdf_image.data.shape[1] + int(position[1]*self.vdf_image.data.shape[1])
-                    self.update_slice_image()
-                    slice_number.text = str(self._current_slice)
-                    self.results_pick_region.position = position
+                self.update_pick_regions(position)
 
         def vdf_pick_region_deleted():
             pick_checkbox.checked = False
@@ -241,13 +255,17 @@ class NanoDiffPanelDelegate(object):
         def results_pick_region_changed(key):
             if key == 'position':
                 position = self.results_pick_region.position
-                if self.vdf_pick_region is not None and not np.isclose(self.vdf_pick_region.position, position).all():
-                    self._current_slice = int(position[0]*self.results_image.data.shape[-2])*self.results_image.data.shape[-1] + int(position[1]*self.results_image.data.shape[-1])
-                    self.update_slice_image()
-                    slice_number.text = str(self._current_slice)
-                    self.vdf_pick_region.position = position
+                self.update_pick_regions(position)
 
         def results_pick_region_deleted():
+            pick_checkbox.checked = False
+        
+        def strain_map_pick_region_changed(key):
+            if key == 'position':
+                position = self.strain_map_pick_region.position
+                self.update_pick_regions(position)
+
+        def strain_map_pick_region_deleted():
             pick_checkbox.checked = False
 
         def pick_checkbox_changed(check_state):
@@ -257,7 +275,7 @@ class NanoDiffPanelDelegate(object):
                         x_coord = self.current_slice%self.vdf_image.data.shape[1]
                         y_coord = self.current_slice//self.vdf_image.data.shape[1]
                         self.vdf_pick_region = self.vdf_image.add_point_region((y_coord+0.5)/self.vdf_image.data.shape[0], (x_coord+0.5)/self.vdf_image.data.shape[1])
-                        #self.vdf_pick_region.set_property('is_bounds_constrained', True)
+                        self.vdf_pick_region.set_property('is_bounds_constrained', True)
                         self.vdf_pick_region.label = 'Pick'
                     property_changed_event = self.vdf_pick_region.get_property('property_changed_event')
                     region_deleted_event = self.vdf_pick_region.get_property('about_to_be_removed_event')
@@ -268,20 +286,31 @@ class NanoDiffPanelDelegate(object):
                         x_coord = self.current_slice%self.results_image.data.shape[-1]
                         y_coord = self.current_slice//self.results_image.data.shape[-1]
                         self.results_pick_region = self.results_image.add_point_region((y_coord+0.5)/self.results_image.data.shape[-2], (x_coord+0.5)/self.results_image.data.shape[-1])
-                        #self.results_pick_region.set_property('is_bounds_constrained', True)
+                        self.results_pick_region.set_property('is_bounds_constrained', True)
                         self.results_pick_region.label = 'Pick'
                     property_changed_event = self.results_pick_region.get_property('property_changed_event')
                     region_deleted_event = self.results_pick_region.get_property('about_to_be_removed_event')
                     self.results_changed_event_listener = property_changed_event.listen(results_pick_region_changed)
                     self.results_deleted_event_listener = region_deleted_event.listen(results_pick_region_deleted)
+                if self.strain_map is not None:
+                    if self.strain_map_pick_region is None:
+                        x_coord = self.current_slice%self.strain_map.data.shape[1]
+                        y_coord = self.current_slice//self.strain_map.data.shape[1]
+                        self.strain_map_pick_region = self.strain_map.add_point_region((y_coord+0.5)/self.strain_map.data.shape[0], (x_coord+0.5)/self.strain_map.data.shape[0])
+                        self.strain_map_pick_region.set_property('is_bounds_constrained', True)
+                        self.strain_map_pick_region.label = 'Pick'
+                    property_changed_event = self.strain_map_pick_region.get_property('property_changed_event')
+                    region_deleted_event = self.strain_map_pick_region.get_property('about_to_be_removed_event')
+                    self.strain_map_changed_event_listener = property_changed_event.listen(strain_map_pick_region_changed)
+                    self.strain_map_deleted_event_listener = region_deleted_event.listen(strain_map_pick_region_deleted)
             else:
                 if self.vdf_image is not None and self.vdf_pick_region is not None:
                     try:
                         self.vdf_image.remove_region(self.vdf_pick_region)
                     except Exception as e:
                         print(e)
-                    self._vdf_pick_region = None
-                    remove_from_metadata(self.vdf_image, 'pick_uuid')
+                    self.vdf_pick_region = None
+                    remove_from_metadata(self.vdf_image, 'pick_region_uuid')
                     delattr(self, 'vdf_changed_event_listener')
                     delattr(self, 'vdf_deleted_event_listener')
 
@@ -290,10 +319,20 @@ class NanoDiffPanelDelegate(object):
                         self.results_image.remove_region(self.results_pick_region)
                     except Exception as e:
                         print(e)
-                    self._results_pick_region = None
-                    remove_from_metadata(self.results_image, 'pick_uuid')
+                    self.results_pick_region = None
+                    remove_from_metadata(self.results_image, 'pick_region_uuid')
                     delattr(self, 'results_changed_event_listener')
                     delattr(self, 'results_deleted_event_listener')
+                    
+                if self.strain_map is not None and self.strain_map_pick_region is not None:
+                    try:
+                        self.strain_map.remove_region(self.strain_map_pick_region)
+                    except Exception as e:
+                        print(e)
+                    self.strain_map_pick_region = None
+                    remove_from_metadata(self.strain_map, 'pick_region_uuid')
+                    delattr(self, 'strain_map_changed_event_listener')
+                    delattr(self, 'strain_map_deleted_event_listener')
 
         def start_button_clicked():
             roi = {}
@@ -337,10 +376,17 @@ class NanoDiffPanelDelegate(object):
 
             def run_find_peaks():
                 self._nanodiff_analyzer.filename = self.filepath
-                self._nanodiff_analyzer.process_nanodiff_map()
-                def update_text():
-                    find_peaks_button.text = 'Find peaks stack'
-                self.__api.queue_task(update_text)
+                try:
+                    self._nanodiff_analyzer.process_nanodiff_map()
+                except AssertionError:
+                    self._nanodiff_analyzer.shape = None
+                    self.__api.queue_task(logging.warn('The number of slices does not match the shape of the map. ' + 
+                                                    'Maybe it is a non-square map? Try setting its shape explicitly.'))
+                    return
+                finally:
+                    def update_text():
+                        find_peaks_button.text = 'Find peaks stack'
+                    self.__api.queue_task(update_text)
                 if self.results_image is None:
                     def create_item():
                         self.results_image = self.__api.library.create_data_item()
@@ -375,6 +421,7 @@ class NanoDiffPanelDelegate(object):
                     self.strain_map = self.__api.library.create_data_item()
                 data = self._nanodiff_analyzer.make_strain_map()
                 self.update_strain_map(data)
+                update_metadata(self.strain_map, {'source_uuid': self.slice_image.uuid.hex})
 
 
 
@@ -424,6 +471,7 @@ class NanoDiffPanelDelegate(object):
         parameters_row3.add(ui.create_label_widget("Jump to slice #: "))
         slice_number = ui.create_line_edit_widget()
         slice_number.on_editing_finished = slice_number_finished
+        self.slice_number = slice_number
         parameters_row3.add(slice_number)
         parameters_row3.add(ui.create_label_widget(" current slice #"))
         parameters_row3.add_stretch()
@@ -556,6 +604,23 @@ class NanoDiffPanelDelegate(object):
                       'angle_tolerance': self._nanodiff_analyzer.angle_tolerance,
                       'minimum_peak_distance': self._nanodiff_analyzer.minimum_peak_distance}
         update_metadata(self.strain_map, {'peak_finding_parameters': parameters})
+    
+    def update_pick_regions(self, position):
+        current_slice = None
+        if self.results_pick_region is not None and not np.isclose(self.results_pick_region.position, position).all():
+            current_slice = current_slice or int(position[0]*self.results_image.data.shape[-2])*self.results_image.data.shape[-1] + int(position[1]*self.results_image.data.shape[-1])
+            self.results_pick_region.position = position
+        if self.vdf_pick_region is not None and not np.isclose(self.vdf_pick_region.position, position).all():
+            current_slice = current_slice or int(position[0]*self.vdf_image.data.shape[0])*self.vdf_image.data.shape[1] + int(position[1]*self.vdf_image.data.shape[1])
+            self.vdf_pick_region.position = position
+        if self.strain_map_pick_region is not None and not np.isclose(self.strain_map_pick_region.position, position).all():
+            current_slice = current_slice or int(position[0]*self.strain_map.data.shape[0])*self.strain_map.data.shape[1] + int(position[1]*self.strain_map.data.shape[1])
+            self.strain_map_pick_region.position = position
+            
+        if current_slice is not None:
+            self._current_slice = current_slice
+            self.slice_number.text = str(self._current_slice)
+            self.update_slice_image()
 
     def show_config_box(self):
         dc = self.document_controller._document_controller
@@ -570,6 +635,7 @@ class NanoDiffPanelDelegate(object):
                         delattr(nanodiffGUI, 'settings_window')
                 self.on_accept = report_window_close
                 self.on_reject = report_window_close
+                self.shape = [None, None]
 
                 def blur_radius_finished(text):
                     if len(text) > 0:
@@ -647,6 +713,17 @@ class NanoDiffPanelDelegate(object):
                             nanodiffGUI._nanodiff_analyzer.minimum_peak_distance = minimum_peak_distance
                     else:
                         minimum_peak_distance_field.text = '{:.0f}'.format(nanodiffGUI._nanodiff_analyzer.minimum_peak_distance)
+                        
+                def maximum_peak_radius_finished(text):
+                    if len(text) > 0:
+                        try:
+                            maximum_peak_radius = float(text)
+                        except ValueError:
+                            maximum_peak_radius_field.text = '{:.2f}'.format(nanodiffGUI._nanodiff_analyzer.maximum_peak_radius)
+                        else:
+                            nanodiffGUI._nanodiff_analyzer.maximum_peak_radius = maximum_peak_radius
+                    else:
+                        maximum_peak_radius_field.text = '{:.2f}'.format(nanodiffGUI._nanodiff_analyzer.maximum_peak_radius)
 
                 def number_processes_finished(text):
                     if len(text) > 0:
@@ -658,6 +735,40 @@ class NanoDiffPanelDelegate(object):
                             nanodiffGUI._nanodiff_analyzer.number_processes = number_processes
                     else:
                         number_processes_field.text = '{:.0f}'.format(nanodiffGUI._nanodiff_analyzer.number_processes)
+                
+                def shape_y_finished(text):
+                    if len(text) > 0:
+                        try:
+                            shape_y = int(text)
+                        except ValueError:
+                            shape_y_field.placeholder_text = 'None'
+                            self.shape[0] = None
+                        else:
+                            self.shape[0] = shape_y
+                    else:
+                        shape_y_field.placeholder_text = 'None'
+                        self.shape[0] = None
+                    if not None in self.shape:
+                        nanodiffGUI._nanodiff_analyzer.shape = tuple(self.shape)
+                    else:
+                        nanodiffGUI._nanodiff_analyzer.shape = None
+                
+                def shape_x_finished(text):
+                    if len(text) > 0:
+                        try:
+                            shape_x = int(text)
+                        except ValueError:
+                            shape_x_field.placeholder_text = 'None'
+                            self.shape[1] = None
+                        else:
+                            self.shape[1] = shape_x
+                    else:
+                        shape_x_field.placeholder_text = 'None'
+                        self.shape[1] = None
+                    if not None in self.shape:
+                        nanodiffGUI._nanodiff_analyzer.shape = tuple(self.shape)
+                    else:
+                        nanodiffGUI._nanodiff_analyzer.shape = None
 
                 row1 = self.ui.create_row_widget()
                 row2 = self.ui.create_row_widget()
@@ -669,6 +780,8 @@ class NanoDiffPanelDelegate(object):
                 row8 = self.ui.create_row_widget()
                 row9 = self.ui.create_row_widget()
                 row10 = self.ui.create_row_widget()
+                row11 = self.ui.create_row_widget()
+                row12 = self.ui.create_row_widget()
 
                 blur_radius_field = self.ui.create_line_edit_widget()
                 blur_radius_field.on_editing_finished = blur_radius_finished
@@ -690,9 +803,17 @@ class NanoDiffPanelDelegate(object):
 
                 minimum_peak_distance_field = self.ui.create_line_edit_widget()
                 minimum_peak_distance_field.on_editing_finished = minimum_peak_distance_finished
+                
+                maximum_peak_radius_field = self.ui.create_line_edit_widget()
+                maximum_peak_radius_field.on_editing_finished = maximum_peak_radius_finished
 
                 number_processes_field = self.ui.create_line_edit_widget()
                 number_processes_field.on_editing_finished = number_processes_finished
+                
+                shape_y_field = self.ui.create_line_edit_widget()
+                shape_y_field.on_editing_finished = shape_y_finished
+                shape_x_field = self.ui.create_line_edit_widget()
+                shape_x_field.on_editing_finished = shape_x_finished
 
                 row1.add_spacing(5)
                 row1.add(self.ui.create_label_widget('Parameters for inital peak finding:'))
@@ -726,13 +847,13 @@ class NanoDiffPanelDelegate(object):
                 row5.add_stretch()
 
                 row6.add_spacing(5)
-                row6.add(self.ui.create_label_widget('Length tolerance for comparing distance between adjacent peaks (relative): '))
+                row6.add(self.ui.create_label_widget('Length tolerance for comparing distance to center for peaks within one hexagon (relative): '))
                 row6.add(length_tolerance_field)
                 row6.add_spacing(5)
                 row6.add_stretch()
 
                 row7.add_spacing(5)
-                row7.add(self.ui.create_label_widget('Angle tolerance between adjacent peaks (deg): '))
+                row7.add(self.ui.create_label_widget('Angle tolerance between peaks within one hexagon (deg): '))
                 row7.add(angle_tolerance_field)
                 row7.add_spacing(5)
                 row7.add_stretch()
@@ -742,17 +863,31 @@ class NanoDiffPanelDelegate(object):
                 row8.add(minimum_peak_distance_field)
                 row8.add_spacing(5)
                 row8.add_stretch()
-
+                
                 row9.add_spacing(5)
-                row9.add(self.ui.create_label_widget('Additional parameters:'))
+                row9.add(self.ui.create_label_widget('Maximum radius for peaks to be included (relative to image radius): '))
+                row9.add(maximum_peak_radius_field)
                 row9.add_spacing(5)
                 row9.add_stretch()
 
                 row10.add_spacing(5)
-                row10.add(self.ui.create_label_widget('Number of processor cores to use for map analysis: '))
-                row10.add(number_processes_field)
+                row10.add(self.ui.create_label_widget('Additional parameters:'))
                 row10.add_spacing(5)
                 row10.add_stretch()
+
+                row11.add_spacing(5)
+                row11.add(self.ui.create_label_widget('Number of processor cores to use for map analysis: '))
+                row11.add(number_processes_field)
+                row11.add_spacing(5)
+                row11.add_stretch()
+                
+                row12.add_spacing(5)
+                row12.add(self.ui.create_label_widget('Shape of the map (only needed for non-square maps) (y, x): '))
+                row12.add(shape_y_field)
+                row12.add_spacing(5)
+                row12.add(shape_x_field)
+                row12.add_spacing(5)
+                row12.add_stretch()
 
                 self.content.add_spacing(5)
                 self.content.add(row1)
@@ -770,11 +905,15 @@ class NanoDiffPanelDelegate(object):
                 self.content.add(row7)
                 self.content.add_spacing(5)
                 self.content.add(row8)
-                self.content.add_spacing(30)
-                self.content.add(row9)
-                self.content.add_spacing(15)
-                self.content.add(row10)
                 self.content.add_spacing(5)
+                self.content.add(row9)
+                self.content.add_spacing(30)
+                self.content.add(row10)
+                self.content.add_spacing(15)
+                self.content.add(row11)
+                self.content.add_spacing(5)
+                self.content.add(row12)
+                self.content.add_spacing(5)                
                 self.content.add_stretch()
 
                 def update_fields():
@@ -786,6 +925,9 @@ class NanoDiffPanelDelegate(object):
                     angle_tolerance_finished('')
                     number_processes_finished('')
                     minimum_peak_distance_finished('')
+                    maximum_peak_radius_finished('')
+                    shape_y_finished('')
+                    shape_x_finished('')
                 self.update_fields = update_fields
                 update_fields()
 
