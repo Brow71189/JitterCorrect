@@ -327,7 +327,9 @@ class NanoDiffAnalyzer(object):
         for k in range(radii.shape[0]):
             for i in range(radii.shape[1]):
                 if not (self.second_peaks[k, i] == 0).all():
-                    ellipse[k, i] = np.array(fit_ellipse(angles[k, i], radii[k, i]))
+                    angle = angles[k,i][np.sum(self.second_peaks[k,i], axis=-1) != 0]
+                    radius = radii[k,i][np.sum(self.second_peaks[k,i], axis=-1) != 0]
+                    ellipse[k, i] = np.array(fit_ellipse(angle, radius))
         return ellipse
 
     def abort(self):
