@@ -206,25 +206,34 @@ class Jitter(object):
         return converted_resulting_maxima
         
         
-    def remove_y_jitter(self, crop_im, return_coordinates=False):
+    def remove_y_jitter(self, crop_im, return_coordinates=False, mask=None):
         shape = crop_im.shape
+        if mask is not None:
+            crop_im = np.ma.masked_array(crop_im, mask=mask)
         tophalf = crop_im[:int(shape[0]/2)]
         bottomhalf = crop_im[int(shape[0]/2):]
         if return_coordinates:
             corrected_crop_im = np.zeros(shape)
-            corrected_crop_im[:int(shape[0]/2)] = np.expand_dims(np.argsort(np.sum(tophalf, axis=1)), axis=1).repeat(shape[1], axis=1)
-            corrected_crop_im[int(shape[0]/2):] = np.expand_dims(np.argsort(np.sum(bottomhalf, axis=1))[::-1], axis=1).repeat(shape[1], axis=1)+int(shape[0]/2)
+            corrected_crop_im[:int(shape[0]/2)] = np.expand_dims(np.argsort(np.mean(tophalf, axis=1)), axis=1).repeat(shape[1], axis=1)
+            corrected_crop_im[int(shape[0]/2):] = np.expand_dims(np.argsort(np.mean(bottomhalf, axis=1))[::-1], axis=1).repeat(shape[1], axis=1)+int(shape[0]/2)
+            if mask is not None:
+                org_indices = np.expand_dims(np.arange(shape[0]), axis=1).repeat(shape[1], axis=1)
+                corrected_crop_im[mask] = org_indices[mask]
         else:
-            sorted_tophalf = tophalf[np.argsort(np.sum(tophalf, axis=1))]
-            sorted_bottomhalf = bottomhalf[np.argsort(np.sum(bottomhalf, axis=1))[::-1]]
+            sorted_tophalf = tophalf[np.argsort(np.mean(tophalf, axis=1))]
+            sorted_bottomhalf = bottomhalf[np.argsort(np.mean(bottomhalf, axis=1))[::-1]]
             corrected_crop_im = np.zeros(shape)
             corrected_crop_im[:int(shape[0]/2)] = sorted_tophalf
             corrected_crop_im[int(shape[0]/2):] = sorted_bottomhalf
         return corrected_crop_im
         
-    def remove_x_jitter_com(self, crop_im, return_coordinates=False):
+    def remove_x_jitter_com(self, crop_im, return_coordinates=False, mask=None):
         shape = crop_im.shape
+        if mask is not None:
+            crop_im = np.ma.masked_array(crop_im, mask=mask)
         com_lines = np.mgrid[:shape[0], :shape[1]][1]
+        if mask is not None:
+            com_lines = np.ma.masked_array(com_lines, mask=mask)
         com_lines = np.sum(com_lines*crop_im, axis=1)/np.sum(crop_im, axis=1) - shape[1]/2
         mean_com = np.mean(com_lines)
         x_corrected_crop_im = np.zeros(shape)
@@ -241,10 +250,23 @@ class Jitter(object):
                 original_indices = (original_indices[0 <= corrected_indices]).astype(np.int)
                 corrected_indices = (corrected_indices[0 <= corrected_indices]).astype(np.int)
                 x_corrected_crop_im[i, corrected_indices] = crop_im[i, original_indices]
+        if return_coordinates:
+            if mask is not None:
+                org_indices = np.expand_dims(np.arange(shape[1]), axis=0).repeat(shape[0], axis=0)
+                x_corrected_crop_im[mask] = org_indices[mask]
+        else:
+            pass
         return x_corrected_crop_im
         
     def dejitter_full_image(self, box_size=60):
         half_box_size = int(box_size/2)
+        if box_size%2 == 0:
+            box_size = int(box_size + 1)
+        else:
+            box_size = int(box_size)
+        mask = np.ones((box_size, box_size), dtype=np.bool)
+        draw_circle(mask, (half_box_size, half_box_size), half_box_size, color=False)
+        mask = mask[:-1, :-1]
         shape = self.image.shape
         coordinate_offsets = np.mgrid[0:shape[0], 0:shape[1]]
         print('Finding maxima')
@@ -255,7 +277,7 @@ class Jitter(object):
             if (max_array < half_box_size).any() or (max_array >= np.array(shape) - half_box_size - 1).any():
                 continue
             chunk = (maximum[0]-half_box_size, maximum[0]+half_box_size, maximum[1]-half_box_size, maximum[1]+half_box_size)
-            new_y_coords = self.remove_y_jitter(self.image[chunk[0]:chunk[1], chunk[2]:chunk[3]], return_coordinates=True)
+            new_y_coords = self.remove_y_jitter(self.image[chunk[0]:chunk[1], chunk[2]:chunk[3]], return_coordinates=True, mask=mask)
             new_y_coords = maximum[0] - half_box_size + new_y_coords
             #new_y_coords = new_y_coords - half_box_size
             coordinate_offsets[0][chunk[0]:chunk[1], chunk[2]:chunk[3]] = new_y_coords
@@ -268,7 +290,7 @@ class Jitter(object):
             if (max_array < half_box_size).any() or (max_array >= np.array(shape) - half_box_size - 1).any():
                 continue
             chunk = (maximum[0]-half_box_size, maximum[0]+half_box_size, maximum[1]-half_box_size, maximum[1]+half_box_size)
-            new_x_coords = self.remove_x_jitter_com(y_corrected[chunk[0]:chunk[1], chunk[2]:chunk[3]], return_coordinates=True)
+            new_x_coords = self.remove_x_jitter_com(y_corrected[chunk[0]:chunk[1], chunk[2]:chunk[3]], return_coordinates=True, mask=mask)
             new_x_coords = maximum[1] - half_box_size + new_x_coords
             #new_x_coords = new_x_coords - half_box_size
             coordinate_offsets[1][chunk[0]:chunk[1], chunk[2]:chunk[3]] = new_x_coords
@@ -281,3 +303,14 @@ class Jitter(object):
         new_coordinates += coordinate_offsets
         corrected = self.image[new_coordinates[0].astype(np.int), new_coordinates[1].astype(np.int)]
         return corrected.copy()
+    
+def draw_circle(image, center, radius, color=-1, thickness=-1):
+    subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
+    y, x = np.mgrid[-radius:radius+1, -radius:radius+1]
+    distances = np.sqrt(x**2+y**2)
+    if thickness < 0:
+        subarray[distances < radius + np.sqrt(2)/2] = color
+    elif thickness == 0:
+        subarray[(distances < radius + np.sqrt(2)/2) * (distances > radius - np.sqrt(2)/2)] = color
+    else:
+        subarray[(distances < radius+thickness+1) * (distances > radius-thickness)] = color
