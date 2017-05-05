@@ -283,6 +283,7 @@ class Jitter(object):
             coordinate_offsets[0][chunk[0]:chunk[1], chunk[2]:chunk[3]] = new_y_coords
         coordinate_offsets -= np.mgrid[0:shape[0], 0:shape[1]]
         y_corrected = self.apply_correction(coordinate_offsets)
+        y_corrected -= np.amin(y_corrected)
         coordinate_offsets += np.mgrid[0:shape[0], 0:shape[1]]
         print('correcting x-jitter')
         for maximum in local_maxima:
@@ -299,6 +300,7 @@ class Jitter(object):
         return coordinate_offsets
 
     def apply_correction(self, coordinate_offsets):
+        np.save('/home/mittelberger2/Downloads/coordinate_offsets.npy', coordinate_offsets)
         new_coordinates = np.mgrid[0:self.image.shape[0], 0:self.image.shape[1]].astype(np.float32)
         new_coordinates += coordinate_offsets
         corrected = self.image[new_coordinates[0].astype(np.int), new_coordinates[1].astype(np.int)]
