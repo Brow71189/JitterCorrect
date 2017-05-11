@@ -300,7 +300,6 @@ class Jitter(object):
         return coordinate_offsets
 
     def apply_correction(self, coordinate_offsets):
-        np.save('/home/mittelberger2/Downloads/coordinate_offsets.npy', coordinate_offsets)
         new_coordinates = np.mgrid[0:self.image.shape[0], 0:self.image.shape[1]].astype(np.float32)
         new_coordinates += coordinate_offsets
         corrected = self.image[new_coordinates[0].astype(np.int), new_coordinates[1].astype(np.int)]
