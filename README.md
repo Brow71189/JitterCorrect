@@ -19,7 +19,7 @@ Installation
 
 If you used the "Download as ZIP" function on github to get the code make sure you rename the project folder to "JitterWizard" after extracting the ZIP-archive. If you used the "clone" function you can start right away.
 Since the package uses some cython code for performance reasons it has to be compiled before you can use it. To do this run
-```python
+```
 ~/miniconda3/bin/python3 setup.py build_ext --inplace
 ```
 in a terminal that you opened in the project folder. Make sure the first part of the command uses EXACTLY the same python that is used for running Nion Swift or the plugin will most likely not work. The example given here would be for a installation on Linux with the standard installation of Swift as described on the homepage¹.
