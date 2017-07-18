@@ -952,10 +952,11 @@ def remove_from_metadata(data_item, key):
 AXES_DESCRIPTION = """Axes description:
     1. Peak index (0-5: inner ring, 6-12: outer ring)
     2. Peak y-, and x-coordinate
-    3. Map y-coordinate\n4. Map x-coordinate"""
+    3. Map y-coordinate
+    4. Map x-coordinate"""
 
 STRAIN_MAP_AXES_DESCRIPTION = """Axes description:
-    1. Ellipse paramters (axis 1, axis 2, angle)
+    1. Ellipse parameters (axis 1, axis 2, angle)
     2. Map y-coordinate
     3. Map x-coordinate"""
 

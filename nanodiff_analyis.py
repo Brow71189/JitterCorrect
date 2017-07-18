@@ -339,6 +339,8 @@ class NanoDiffAnalyzer(object):
         workers_finished = 0
         while workers_finished < self.number_processes:
             for worker in self._workers:
+                if not worker.is_alive():
+                    print('worker sleeping')
                 if self._abort_event.is_set():
                     worker.terminate()
                 if worker.exitcode is not None:
