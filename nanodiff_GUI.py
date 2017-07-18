@@ -597,7 +597,7 @@ class NanoDiffPanelDelegate(object):
         xdata = self.__api.create_data_and_metadata(data, data_descriptor=data_descriptor)
         self.strain_map.set_data_and_metadata(xdata)
         self.strain_map.title = 'Strain_map_of_{}'.format(os.path.splitext(os.path.split(self.filepath)[1])[0])
-        self.strain_map._data_item.caption = 'Axes description:\n\t1. Ellipse paramters (axis 1, axis 2, angle)\n\t2. Map y-coordinate\n\t3. Map x-coordinate'
+        self.strain_map._data_item.caption = STRAIN_MAP_AXES_DESCRIPTION
         parameters = {'max_number_peaks': self._nanodiff_analyzer.max_number_peaks,
                       'second_ring_min_distance': self._nanodiff_analyzer.second_ring_min_distance,
                       'blur_radius': self._nanodiff_analyzer.blur_radius,
@@ -949,8 +949,15 @@ def remove_from_metadata(data_item, key):
     metadata.pop(key, None)
     data_item.set_metadata(metadata)
 
-AXES_DESCRIPTION = """Axes description:\n\t1. Peak index (0-5: inner ring, 6-12: outer ring)\n\t2. Peak y-, and
-x-coordinate\n\t3. Map y-coordinate\n\t4. Map x-coordinate"""
+AXES_DESCRIPTION = """Axes description:
+    1. Peak index (0-5: inner ring, 6-12: outer ring)
+    2. Peak y-, and x-coordinate
+    3. Map y-coordinate\n4. Map x-coordinate"""
+
+STRAIN_MAP_AXES_DESCRIPTION = """Axes description:
+    1. Ellipse paramters (axis 1, axis 2, angle)
+    2. Map y-coordinate
+    3. Map x-coordinate"""
 
 class NanoDiffExtension(object):
     extension_id = 'univie.nanodiff'
