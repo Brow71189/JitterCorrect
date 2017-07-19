@@ -422,8 +422,44 @@ class NanoDiffPanelDelegate(object):
                 data = self._nanodiff_analyzer.make_strain_map()
                 self.update_strain_map(data)
                 update_metadata(self.strain_map, {'source_uuid': self.slice_image.uuid.hex})
-
-
+            
+        def pretty_time_format(time_s):
+            time_s = int(time_s)
+            h = time_s//3600
+            r_h = time_s%3600
+            m = r_h//60
+            s = r_h%60
+            
+            pretty_string = ''
+            if h != 0:
+                pretty_string += '{:d}h '.format(h)
+            
+            if m != 0 or h != 0:
+                pretty_string += '{:02d}m '.format(m)
+            
+            pretty_string += '{:02d}s'.format(s)
+            
+            return pretty_string
+            
+            
+        def update_progress_label(slices_done, total_number_slices, runtime):
+            
+            if slices_done > 0:
+                eta = runtime/slices_done*total_number_slices - runtime
+                eta_string = pretty_time_format(eta)
+            else:
+                eta_string = '--'
+                
+            time_string = pretty_time_format(runtime)
+            space = len(str(total_number_slices))
+            def update_labels():
+                progress_label.text = ('{:>'+ str(space) +'.0f}/{:.0f}').format(slices_done, total_number_slices)
+                
+                time_label.text = '{:s}  ETA: {:s}'.format(time_string, eta_string)
+            
+            document_controller.queue_task(update_labels)
+        
+        self._nanodiff_analyzer.report_progress = update_progress_label
 
         column = ui.create_column_widget()
         descriptor_row1 = ui.create_row_widget()
@@ -437,12 +473,14 @@ class NanoDiffPanelDelegate(object):
         open_button = ui.create_push_button_widget("Open...")
         open_button.on_clicked = open_button_clicked
         parameters_row1.add(open_button)
+        parameters_row1.add_spacing(5)
 
         button_row0 = ui.create_row_widget()
         select_button = ui.create_push_button_widget('Select opened stack')
         select_button.on_clicked = select_button_clicked
         button_row0.add_stretch()
         button_row0.add(select_button)
+        button_row0.add_spacing(5)
 
         descriptor_row3 = ui.create_row_widget()
         descriptor_row3.add(ui.create_label_widget("Browse through hdf5-file: "))
@@ -466,6 +504,7 @@ class NanoDiffPanelDelegate(object):
         next10_button = ui.create_push_button_widget(">>")
         next10_button.on_clicked = next10_button_clicked
         button_row1.add(next10_button)
+        button_row1.add_spacing(5)
 
         parameters_row3 = ui.create_row_widget()
         parameters_row3.add(ui.create_label_widget("Jump to slice #: "))
@@ -475,6 +514,7 @@ class NanoDiffPanelDelegate(object):
         parameters_row3.add(slice_number)
         parameters_row3.add(ui.create_label_widget(" current slice #"))
         parameters_row3.add_stretch()
+        parameters_row3.add_spacing(5)
 
         checkbox_row = ui.create_row_widget()
         checkbox_row.add(ui.create_label_widget('Pick '))
@@ -485,6 +525,18 @@ class NanoDiffPanelDelegate(object):
         checkbox_row.add(pick_checkbox)
         checkbox_row.add_stretch()
         checkbox_row.add(config_button)
+        checkbox_row.add_spacing(5)
+        
+        progress_row = ui.create_row_widget()
+        progress_row.add(ui.create_label_widget('Progress: '))
+        progress_label = ui.create_label_widget()
+        progress_row.add(progress_label)
+        progress_row.add_stretch()
+        progress_row.add_spacing(5)
+        progress_row.add(ui.create_label_widget('Time: '))
+        time_label = ui.create_label_widget()
+        progress_row.add(time_label)
+        progress_row.add_spacing(5)
 
         button_row2 = ui.create_row_widget()
         start_button = ui.create_push_button_widget("Virtual DF")
@@ -498,6 +550,7 @@ class NanoDiffPanelDelegate(object):
         button_row2.add(find_peaks_single_button)
         button_row2.add_spacing(3)
         button_row2.add(find_peaks_button)
+        button_row2.add_spacing(5)
 
         button_row3 = ui.create_row_widget()
         make_strain_map_button = ui.create_push_button_widget('Make strain map')
@@ -519,6 +572,8 @@ class NanoDiffPanelDelegate(object):
         column.add(parameters_row3)
         column.add_spacing(8)
         column.add(checkbox_row)
+        column.add_spacing(15)
+        column.add(progress_row)
         column.add_spacing(15)
         column.add(button_row2)
         column.add_spacing(15)

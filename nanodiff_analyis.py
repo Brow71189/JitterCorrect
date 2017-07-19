@@ -262,9 +262,11 @@ class NanoDiffAnalyzer(object):
         #self._stop_event = threading.Event()
         self._number_slices_set_event = threading.Event()
         self._abort_event = threading.Event()
+        self.report_progress = None
+        self.starttime = None
 
     def process_nanodiff_map(self):
-        starttime = time.time()
+        self.starttime = time.time()
         self._abort_event.clear()
         threading.Thread(target=self._fill_filequeue).start()
         self._number_slices_set_event.wait(timeout=10)
@@ -306,7 +308,7 @@ class NanoDiffAnalyzer(object):
         if worker_handler.is_alive():
             self.abort()
 
-        print(time.time() - starttime)
+        print(time.time() - self.starttime)
 
     def process_nanodiff_image(self, image):
         analyzer = NanoDiffAnalyzerWorker(self._filequeue, self._outqueue,
@@ -356,14 +358,18 @@ class NanoDiffAnalyzer(object):
         self.centers = np.zeros(tuple(self.shape) + (2,))
         errorfile = open('errors.txt', 'w+')
         i = 0
+        last_report_time = 0
         while i < self.number_slices and not self._abort_event.is_set():
             try:
                 index, first_hexagon, second_hexagon, center = self._outqueue.get(timeout=1)
             except queue.Empty:
                 pass
             else:
-                if i%100 == 0:
-                    print('Processed {:.0f} out of {:.0f} slices.'.format(i, self.number_slices))
+                if time.time() - last_report_time > 1:#i%100 == 0:
+                    #print('Processed {:.0f} out of {:.0f} slices.          '.format(i, self.number_slices), end='\r')
+                    if callable(self.report_progress):
+                        self.report_progress(i, self.number_slices, time.time() - self.starttime)
+                    last_report_time = time.time()
                 x_coord = index%self.shape[1]
                 y_coord = index//self.shape[1]
                 try:
@@ -380,6 +386,8 @@ class NanoDiffAnalyzer(object):
                     print('Error in second hexagon in slice {:.0f}: {}'.format(index, str(e)))
                 self.centers[y_coord, x_coord] = center
                 i += 1
+        if callable(self.report_progress):
+            self.report_progress(i, self.number_slices, time.time() - self.starttime)
         errorfile.close()
 
     def _fill_filequeue(self):
