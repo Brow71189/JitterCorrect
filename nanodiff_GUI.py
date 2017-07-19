@@ -196,6 +196,7 @@ class NanoDiffPanelDelegate(object):
             self.single_image_peaks = None
             self.strain_map = None
             self.strain_map_pick_region = None
+            self._nanodiff_analyzer.shape = None
             self.update_slice_image()
             update_metadata(self.slice_image, {'source_file_path': self.filepath})
 
