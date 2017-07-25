@@ -6,4 +6,3 @@ Created on Thu Dec 15 14:14:51 2016
 """
 
 from . import jitter_GUI
-from . import nanodiff_GUI

@@ -7,8 +7,7 @@ Created on Wed Dec 14 14:19:31 2016
 
 import numpy as np
 from scipy import ndimage
-#import pyximport; pyximport.install()
-from .JitterWizard import analyze_maxima
+from AnalyzeMaxima import analyze_maxima
 
 class Jitter(object):
     
