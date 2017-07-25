@@ -9,8 +9,7 @@ import numpy as np
 _ = gettext.gettext
 
 class JitterPanelDelegate(object):
-    
-    
+        
     def __init__(self, api):
         self.__api = api
         self.panel_id = 'Jitter-Panel'
