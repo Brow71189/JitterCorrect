@@ -10,7 +10,7 @@ from scipy import ndimage
 from AnalyzeMaxima import analyze_maxima
 
 class Jitter(object):
-    
+
     def __init__(self, **kwargs):
         self._image = None
         self._blur_radius = None
@@ -18,29 +18,29 @@ class Jitter(object):
         self._local_maxima = None
         self._raw_local_maxima = None
         self._noise_tolerance = None
-    
+
     @property
     def image(self):
         return self._image
-    
+
     @image.setter
     def image(self, image):
         self._image = image
         self._blurred_image = None
         self._local_maxima = None
         self._raw_local_maxima = None
-        
+
     @property
     def blurred_image(self):
         if self._blurred_image is None:
             #print('Calculating new blurred image')
             self._blurred_image = ndimage.gaussian_filter(self.image.astype(np.float64), self._blur_radius)
         return self._blurred_image
-    
+
     @property
     def blur_radius(self):
         return self._blur_radius
-    
+
     @blur_radius.setter
     def blur_radius(self, blur_radius):
         if blur_radius != self._blur_radius:
@@ -48,23 +48,23 @@ class Jitter(object):
             self._raw_local_maxima = None
             self._local_maxima = None
         self._blur_radius = blur_radius
-    
+
     @property
     def noise_tolerance(self):
         return self._noise_tolerance
-        
+
     @noise_tolerance.setter
     def noise_tolerance(self, noise_tolerance):
         if noise_tolerance != self._noise_tolerance:
             self._local_maxima = None
         self._noise_tolerance = noise_tolerance
-    
+
     @property
     def raw_local_maxima(self):
         if self._raw_local_maxima is None:
             self._raw_local_maxima = self.find_local_maxima()
         return self._raw_local_maxima
-        
+
     @property
     def local_maxima(self):
         if self._local_maxima is None:
@@ -77,11 +77,11 @@ class Jitter(object):
             self.image = image
         if sigma is not None:
             self.blur_radius = sigma
-        if None in (self.image, self._blur_radius):
+        if self.image is None or self._blur_radius is None:
             raise ValueError('You must set image and sigma in order to calculate the blurred image.')
-        
+
         return self.blurred_image
-    
+
     def find_local_maxima(self):
         local_maxima = np.zeros(self.image.shape)
         shape = self.image.shape
@@ -100,7 +100,7 @@ class Jitter(object):
             source_x = mappings[target_x]
             extended_blurred_image[..., i+1][target_y[0]:target_y[1], target_x[0]:target_x[1]] = (
                                                     blurred_image[source_y[0]:source_y[1], source_x[0]:source_x[1]])
-        
+
         max_positions = np.argmax(extended_blurred_image, axis=-1)
         local_maxima[max_positions == 0] = blurred_image[max_positions == 0]
         local_maxima[0, :] = 0
@@ -124,7 +124,7 @@ class Jitter(object):
 #                if is_max:
 #                    local_maxima[y,x] = blurred_image[y,x]
         return local_maxima, list(zip(*np.where(local_maxima)))
-        
+
     def analyze_and_mark_maxima(self, maxima, noise_tolerance=0):
         blurred_image = self.blurred_image.ravel().astype(np.float32)
         shape = self.blurred_image.shape
@@ -153,7 +153,7 @@ class Jitter(object):
 #            listlen = 1
 #            maximum_possible = True
 #            maximum_value = blurred_image[maximum[0]][maximum[1]]
-#            
+#
 #            while listi < listlen:
 ##            for i in range(np.size(blurred_image)):
 ##                if listi >= len(nlist):
@@ -175,7 +175,7 @@ class Jitter(object):
 #                    elif 'processed' in point_attributes[current_point_flat]:
 #                        maximum_possible = False
 #                        break
-#                    
+#
 #                    current_value = blurred_image[current_point[0]][current_point[1]]
 #                    if current_value > maximum_value:
 #                        maximum_possible = False
@@ -187,8 +187,8 @@ class Jitter(object):
 #                    runtime += time.time() - starttime
 #                listi += 1
 #            print(listlen)
-#            
-#            
+#
+#
 #            for j in range(listlen):
 #                point = nlist[j]
 #                point_flat = point[0] * shape[1] + point[1]
@@ -203,8 +203,8 @@ class Jitter(object):
         for maximum in resulting_maxima:
             converted_resulting_maxima.append((maximum//shape[1], maximum%shape[1]))
         return converted_resulting_maxima
-        
-        
+
+
     def remove_y_jitter(self, crop_im, return_coordinates=False, mask=None):
         shape = crop_im.shape
         if mask is not None:
@@ -225,7 +225,7 @@ class Jitter(object):
             corrected_crop_im[:int(shape[0]/2)] = sorted_tophalf
             corrected_crop_im[int(shape[0]/2):] = sorted_bottomhalf
         return corrected_crop_im
-        
+
     def remove_x_jitter_com(self, crop_im, return_coordinates=False, mask=None):
         shape = crop_im.shape
         if mask is not None:
@@ -256,7 +256,7 @@ class Jitter(object):
         else:
             pass
         return x_corrected_crop_im
-        
+
     def dejitter_full_image(self, box_size=60):
         half_box_size = int(box_size/2)
         if box_size%2 == 0:
@@ -303,7 +303,7 @@ class Jitter(object):
         new_coordinates += coordinate_offsets
         corrected = self.image[new_coordinates[0].astype(np.int), new_coordinates[1].astype(np.int)]
         return corrected.copy()
-    
+
 def draw_circle(image, center, radius, color=-1, thickness=-1):
     subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
     y, x = np.mgrid[-radius:radius+1, -radius:radius+1]
