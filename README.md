@@ -24,7 +24,7 @@ git clone https://github.com/Brow71189/JitterWizard
 
 If you do not want to use git you can also use github's "download as zip" function and extract the code afterwards.
 
-Once you have the repository on your computer, enter the folder "SwiftCam" and run the following from a terminal:
+Once you have the repository on your computer, enter the folder "JitterWizard" and run the following from a terminal:
 
 ```bash
 python setup.py install
