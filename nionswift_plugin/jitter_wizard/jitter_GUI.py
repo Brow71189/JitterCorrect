@@ -1,6 +1,6 @@
 # standard libraries
 import gettext
-from . import correct_jitter
+from jitter_utils import correct_jitter
 import copy
 import threading
 import logging
